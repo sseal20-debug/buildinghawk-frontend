@@ -1,0 +1,135 @@
+import { useState, useCallback } from 'react'
+import { Map } from './components/Map/Map'
+import { BottomSheet } from './components/BottomSheet/BottomSheet'
+import { SearchBar } from './components/SearchBar'
+import { ParcelDetail } from './components/ParcelDetail/ParcelDetail'
+import { UnitDetail } from './components/ParcelDetail/UnitDetail'
+import { UnitForm } from './components/UnitForm/UnitForm'
+import type { Parcel, Unit } from './types'
+
+type ViewState =
+  | { type: 'map' }
+  | { type: 'parcel'; apn: string }
+  | { type: 'unit'; unitId: string }
+  | { type: 'unit-edit'; unitId: string; buildingId: string }
+  | { type: 'unit-new'; buildingId: string }
+
+export default function App() {
+  const [viewState, setViewState] = useState<ViewState>({ type: 'map' })
+  const [selectedParcel, setSelectedParcel] = useState<Parcel | null>(null)
+  const [sheetHeight, setSheetHeight] = useState<'collapsed' | 'half' | 'full'>('collapsed')
+  const [mapCenter, setMapCenter] = useState<{ lat: number; lng: number } | null>(null)
+
+  const handleParcelSelect = useCallback((parcel: Parcel) => {
+    setSelectedParcel(parcel)
+    setViewState({ type: 'parcel', apn: parcel.apn })
+    setSheetHeight('half')
+  }, [])
+
+  const handleUnitSelect = useCallback((unit: Unit) => {
+    setViewState({ type: 'unit', unitId: unit.id })
+    setSheetHeight('full')
+  }, [])
+
+  const handleEditUnit = useCallback((unit: Unit) => {
+    setViewState({ type: 'unit-edit', unitId: unit.id, buildingId: unit.building_id })
+    setSheetHeight('full')
+  }, [])
+
+  const handleAddUnit = useCallback((buildingId: string) => {
+    setViewState({ type: 'unit-new', buildingId })
+    setSheetHeight('full')
+  }, [])
+
+  const handleBack = useCallback(() => {
+    if (viewState.type === 'unit' || viewState.type === 'unit-edit' || viewState.type === 'unit-new') {
+      if (selectedParcel) {
+        setViewState({ type: 'parcel', apn: selectedParcel.apn })
+        setSheetHeight('half')
+      } else {
+        setViewState({ type: 'map' })
+        setSheetHeight('collapsed')
+      }
+    } else if (viewState.type === 'parcel') {
+      setViewState({ type: 'map' })
+      setSheetHeight('collapsed')
+      setSelectedParcel(null)
+    }
+  }, [viewState, selectedParcel])
+
+  const handleClose = useCallback(() => {
+    setViewState({ type: 'map' })
+    setSheetHeight('collapsed')
+    setSelectedParcel(null)
+  }, [])
+
+  const handleSearchSelect = useCallback((result: { apn: string; centroid?: { coordinates: [number, number] } }) => {
+    if (result.centroid) {
+      setMapCenter({
+        lng: result.centroid.coordinates[0],
+        lat: result.centroid.coordinates[1]
+      })
+    }
+  }, [])
+
+  const handleFormSuccess = useCallback(() => {
+    // Go back to parcel view after saving
+    if (selectedParcel) {
+      setViewState({ type: 'parcel', apn: selectedParcel.apn })
+      setSheetHeight('half')
+    }
+  }, [selectedParcel])
+
+  return (
+    <div className="h-full w-full flex flex-col relative">
+      {/* Search Bar */}
+      <div className="absolute top-0 left-0 right-0 z-10 p-4 pointer-events-none">
+        <div className="pointer-events-auto">
+          <SearchBar onSelect={handleSearchSelect} />
+        </div>
+      </div>
+
+      {/* Map */}
+      <div className="flex-1">
+        <Map
+          onParcelSelect={handleParcelSelect}
+          selectedApn={selectedParcel?.apn}
+          center={mapCenter}
+        />
+      </div>
+
+      {/* Bottom Sheet */}
+      <BottomSheet
+        height={sheetHeight}
+        onHeightChange={setSheetHeight}
+        onClose={handleClose}
+      >
+        {viewState.type === 'parcel' && selectedParcel && (
+          <ParcelDetail
+            apn={viewState.apn}
+            onUnitSelect={handleUnitSelect}
+            onAddUnit={handleAddUnit}
+            onClose={handleClose}
+          />
+        )}
+
+        {viewState.type === 'unit' && (
+          <UnitDetail
+            unitId={viewState.unitId}
+            onBack={handleBack}
+            onEdit={handleEditUnit}
+          />
+        )}
+
+        {(viewState.type === 'unit-edit' || viewState.type === 'unit-new') && (
+          <UnitForm
+            unitId={viewState.type === 'unit-edit' ? viewState.unitId : undefined}
+            buildingId={viewState.buildingId}
+            onBack={handleBack}
+            onSuccess={handleFormSuccess}
+          />
+        )}
+      </BottomSheet>
+    </div>
+  )
+}
