@@ -1,0 +1,825 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+  /* Building Hawk Colors */
+  --color-navy: #1a2744;
+  --color-navy-light: #2d3e5c;
+  --color-navy-dark: #0d1522;
+  --color-gold: #d4a84b;
+  --color-gold-light: #e6c77a;
+  --color-teal: #2d9596;
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-navy);
+}
+
+/* Hide scrollbars but keep functionality */
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Bottom sheet styling */
+.bottom-sheet {
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+  border-radius: 16px 16px 0 0;
+}
+
+/* Form input styling */
+@layer components {
+  .input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-lg
+           focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+           text-base;
+  }
+
+  .input-sm {
+    @apply px-2 py-1.5 text-sm;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-1;
+  }
+
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors
+           focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500;
+  }
+
+  .btn-secondary {
+    @apply bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500;
+  }
+
+  .btn-danger {
+    @apply bg-red-600 text-white hover:bg-red-700 focus:ring-red-500;
+  }
+
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
+  }
+
+  .badge-green {
+    @apply bg-green-100 text-green-800;
+  }
+
+  .badge-red {
+    @apply bg-red-100 text-red-800;
+  }
+
+  .badge-yellow {
+    @apply bg-yellow-100 text-yellow-800;
+  }
+
+  .badge-blue {
+    @apply bg-blue-100 text-blue-800;
+  }
+
+  .badge-gray {
+    @apply bg-gray-100 text-gray-800;
+  }
+}
+
+/* Status dot indicators */
+.status-dot {
+  @apply w-3 h-3 rounded-full;
+}
+
+.status-dot.occupied {
+  @apply bg-green-500;
+}
+
+.status-dot.vacant {
+  @apply bg-red-500;
+}
+
+.status-dot.partial {
+  @apply bg-yellow-500;
+}
+
+.status-dot.in-market {
+  @apply bg-blue-500;
+}
+
+/* Touch-friendly tap targets */
+@media (pointer: coarse) {
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Safe area padding for mobile */
+.safe-bottom {
+  padding-bottom: calc(var(--safe-area-inset-bottom) + 1rem);
+}
+
+/* Building Hawk Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+.animate-slide-up {
+  animation: slideUp 0.3s ease-out;
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Building Hawk button styles */
+@layer components {
+  .btn-gold {
+    @apply bg-gold text-navy-dark font-semibold hover:bg-gold-light focus:ring-gold;
+  }
+
+  .btn-navy {
+    @apply bg-navy-light text-white hover:bg-navy focus:ring-navy;
+  }
+
+  .btn-teal {
+    @apply bg-teal text-white hover:bg-teal-dark focus:ring-teal;
+  }
+}
+
+/* Custom scrollbar for dark theme */
+.dark-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.dark-scrollbar::-webkit-scrollbar-track {
+  background: var(--color-navy-dark);
+}
+
+.dark-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--color-navy-light);
+  border-radius: 4px;
+}
+
+.dark-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--color-gold);
+}
+
+/* Property tooltip styling for Leaflet (if used) */
+.property-tooltip {
+  background: var(--color-navy-dark) !important;
+  color: white !important;
+  border: 1px solid var(--color-gold) !important;
+  border-radius: 6px !important;
+  padding: 6px 12px !important;
+  font-weight: 500 !important;
+}
+
+.property-tooltip::before {
+  border-top-color: var(--color-gold) !important;
+}
+
+/* Ensure Leaflet map container receives all pointer events */
+.leaflet-container {
+  cursor: grab;
+}
+
+.leaflet-container:active {
+  cursor: grabbing;
+}
+
+/* Ensure map panes don't block events */
+.leaflet-pane,
+.leaflet-map-pane,
+.leaflet-tile-pane,
+.leaflet-overlay-pane {
+  pointer-events: auto;
+}
+
+/* Custom CRM marker styling */
+.custom-crm-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Address label pin markers */
+.address-label-pin {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Address tooltip styling */
+.address-tooltip {
+  background: var(--color-navy-dark) !important;
+  color: white !important;
+  border: 1px solid #dc2626 !important;
+  border-radius: 6px !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  white-space: nowrap !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
+}
+
+.address-tooltip::before {
+  border-top-color: #dc2626 !important;
+}
+
+/* ==============================================
+   BRIGHT MAP LABELS STYLING
+   Makes street/city/freeway labels bright and visible
+   ============================================== */
+
+/* Bright labels layer - make text bright white on satellite */
+.bright-labels-layer {
+  filter: invert(1) brightness(2.5) contrast(2);
+  /* This inverts dark text to bright white, high contrast for visibility */
+}
+
+/* ==============================================
+   ROAD NAME LABELS - White text along road overlays
+   ============================================== */
+.road-name-label {
+  background: transparent !important;
+  border: none !important;
+}
+
+.road-name-text {
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  font-family: 'Arial', 'Helvetica', sans-serif;
+  text-shadow:
+    2px 2px 3px rgba(0,0,0,0.9),
+    -2px -2px 3px rgba(0,0,0,0.9),
+    2px -2px 3px rgba(0,0,0,0.9),
+    -2px 2px 3px rgba(0,0,0,0.9),
+    0px 2px 3px rgba(0,0,0,0.9),
+    0px -2px 3px rgba(0,0,0,0.9),
+    2px 0px 3px rgba(0,0,0,0.9),
+    -2px 0px 3px rgba(0,0,0,0.9);
+  white-space: nowrap;
+  letter-spacing: 1.5px;
+  pointer-events: none;
+  transform-origin: center center;
+}
+
+/* Labels pane - bold black text on white backdrop */
+.leaflet-pane.labelsPane img {
+  filter: contrast(2.5) brightness(1.1);
+}
+
+/* ==============================================
+   PARCEL HIGHLIGHT COLORS - AQUA BLUE DEFAULT
+   ============================================== */
+
+/* Default parcels - Aqua/Cyan Blue (like reference image) */
+.leaflet-interactive.parcel-default {
+  stroke: #00D4FF !important;
+  stroke-width: 3px !important;
+  fill: #00D4FF !important;
+  fill-opacity: 0.25 !important;
+}
+
+/* Subject property - BRIGHT RED outline (matching reference) */
+.leaflet-interactive.parcel-subject {
+  stroke: #FF0000 !important;
+  stroke-width: 4px !important;
+  fill: #FF0000 !important;
+  fill-opacity: 0.2 !important;
+}
+
+/* Parcel highlight effects - yellow */
+.leaflet-interactive.parcel-highlight {
+  stroke: #FFFF00 !important;
+  stroke-width: 4px !important;
+  fill: #FFFF00 !important;
+  fill-opacity: 0.2 !important;
+}
+
+/* For sale parcels - bright red */
+.leaflet-interactive.parcel-for-sale {
+  stroke: #FF3333 !important;
+  stroke-width: 3px !important;
+  fill: #FF3333 !important;
+  fill-opacity: 0.2 !important;
+}
+
+/* For lease parcels - bright green */
+.leaflet-interactive.parcel-for-lease {
+  stroke: #00FF00 !important;
+  stroke-width: 3px !important;
+  fill: #00FF00 !important;
+  fill-opacity: 0.2 !important;
+}
+
+/* Recently sold - bright magenta */
+.leaflet-interactive.parcel-recent-sold {
+  stroke: #FF00FF !important;
+  stroke-width: 3px !important;
+  fill: #FF00FF !important;
+  fill-opacity: 0.2 !important;
+}
+
+/* Recently leased - bright cyan */
+.leaflet-interactive.parcel-recent-leased {
+  stroke: #00FFFF !important;
+  stroke-width: 3px !important;
+  fill: #00FFFF !important;
+  fill-opacity: 0.2 !important;
+}
+
+/* Blue outline parcels (aqua like reference) */
+.leaflet-interactive.parcel-blue {
+  stroke: #00D4FF !important;
+  stroke-width: 3px !important;
+  fill: #00D4FF !important;
+  fill-opacity: 0.25 !important;
+}
+
+/* ==============================================
+   FREEWAY/STREET TRANSPARENCY OVERLAY
+   Semi-transparent overlay along major roads
+   ============================================== */
+
+/* Freeway overlay - semi-transparent dark band */
+.freeway-overlay {
+  stroke: rgba(0, 0, 0, 0.4) !important;
+  stroke-width: 40px !important;
+  fill: none !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+/* Street overlay - lighter transparency */
+.street-overlay {
+  stroke: rgba(0, 0, 0, 0.25) !important;
+  stroke-width: 20px !important;
+  fill: none !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+/* Major road label background */
+.road-label-bg {
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+/* ==============================================
+   FREEWAY SHIELD MARKERS
+   California Interstate and State Route shields
+   Official CA spade/poppy shape design
+   ============================================== */
+
+.freeway-shield-container {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Interstate shield (red/white/blue) - proper shield shape */
+.freeway-shield.interstate {
+  width: 36px;
+  height: 36px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+.freeway-shield.interstate::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: #003399;
+  clip-path: polygon(
+    50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%
+  );
+  border: 2px solid white;
+}
+
+.freeway-shield.interstate::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  width: 90%;
+  height: 35%;
+  background: #BF0A30;
+  clip-path: polygon(10% 0%, 90% 0%, 100% 100%, 0% 100%);
+}
+
+.freeway-shield.interstate .shield-inner {
+  color: white;
+  font-weight: 900;
+  font-size: 16px;
+  font-family: 'Highway Gothic', 'Arial Black', sans-serif;
+  text-shadow: 1px 1px 1px rgba(0,0,0,0.8);
+  z-index: 1;
+  letter-spacing: -1px;
+}
+
+/* California State Route shield - OFFICIAL SPADE/POPPY SHAPE */
+/* White background with green border, proper CA shape */
+.freeway-shield.ca-state {
+  width: 34px;
+  height: 40px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+}
+
+/* Outer green border */
+.freeway-shield.ca-state::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: #006B54;
+  clip-path: polygon(
+    50% 0%,
+    85% 5%,
+    100% 20%,
+    100% 55%,
+    85% 80%,
+    50% 100%,
+    15% 80%,
+    0% 55%,
+    0% 20%,
+    15% 5%
+  );
+}
+
+/* Inner white fill */
+.freeway-shield.ca-state::after {
+  content: '';
+  position: absolute;
+  width: 85%;
+  height: 85%;
+  background: white;
+  clip-path: polygon(
+    50% 0%,
+    85% 5%,
+    100% 20%,
+    100% 55%,
+    85% 80%,
+    50% 100%,
+    15% 80%,
+    0% 55%,
+    0% 20%,
+    15% 5%
+  );
+}
+
+.freeway-shield.ca-state .shield-inner {
+  color: #000000;
+  font-weight: 900;
+  font-size: 18px;
+  font-family: 'Highway Gothic', 'Arial Black', sans-serif;
+  z-index: 1;
+  letter-spacing: -1px;
+  margin-top: 2px;
+}
+
+/* Freeway name tooltip */
+.freeway-tooltip {
+  background: rgba(0, 0, 0, 0.85) !important;
+  color: white !important;
+  border: 1px solid #FFD700 !important;
+  border-radius: 4px !important;
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+.freeway-tooltip::before {
+  border-top-color: #FFD700 !important;
+}
+
+/* ==============================================
+   SUBJECT PROPERTY MARKER (RED HIGHLIGHT)
+   ============================================== */
+
+.subject-property-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.subject-property-label {
+  background: #FF0000;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 3px solid white;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.subject-property-label::after {
+  content: '';
+  position: absolute;
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 12px solid #FF0000;
+}
+
+/* ==============================================
+   ROAD OVERLAY LINES
+   Semi-transparent white bands along freeways and major roads
+   ============================================== */
+
+/* Freeway overlay line - wider, more prominent */
+.freeway-overlay-line {
+  stroke: rgba(255, 255, 255, 0.5) !important;
+  stroke-width: 25px !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.3));
+}
+
+/* Major road overlay line - narrower */
+.road-overlay-line {
+  stroke: rgba(255, 255, 255, 0.35) !important;
+  stroke-width: 12px !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+}
+
+/* Road overlay pane styling */
+.leaflet-pane.roadOverlayPane {
+  /* Ensure road overlays render below labels but above satellite */
+}
+
+/* ==============================================
+   CUSTOM LEAFLET POPUP - Blue Header / White Body
+   Matches reference prototype design
+   ============================================== */
+
+.leaflet-popup-content-wrapper {
+  border-radius: 14px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.25) !important;
+}
+
+.leaflet-popup-content {
+  margin: 0 !important;
+  min-width: 280px !important;
+}
+
+.popup-header {
+  background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+  color: white;
+  padding: 14px 16px;
+}
+
+.popup-header h3 {
+  font-size: 14px;
+  margin: 0 0 4px 0;
+  font-weight: 600;
+}
+
+.popup-header .location {
+  font-size: 12px;
+  opacity: 0.9;
+  margin: 0;
+}
+
+.popup-body {
+  padding: 14px 16px;
+  background: white;
+}
+
+.popup-status {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.popup-status.sale { background: #ffebee; color: #c62828; }
+.popup-status.lease { background: #e8f5e9; color: #2e7d32; }
+.popup-status.sold { background: #e3f2fd; color: #1565c0; }
+
+.popup-price {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0d47a1;
+  margin: 8px 0;
+}
+
+.popup-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+  border-bottom: 1px solid #f1f3f5;
+  font-size: 12px;
+}
+
+.popup-row:last-child { border-bottom: none; }
+.popup-row .label { color: #6c757d; }
+.popup-row .value { font-weight: 600; color: #212529; }
+
+/* ==============================================
+   PROPERTY STATUS LEGEND
+   ============================================== */
+
+.map-legend {
+  position: absolute;
+  bottom: 30px;
+  left: 16px;
+  background: white;
+  padding: 14px 18px;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  z-index: 1000;
+  font-size: 12px;
+}
+
+.map-legend h4 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #6c757d;
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+
+.map-legend .legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-weight: 500;
+}
+
+.map-legend .legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+
+.map-legend .legend-dot.sale { background: #dc3545; }
+.map-legend .legend-dot.lease { background: #28a745; }
+.map-legend .legend-dot.sold { background: #007bff; }
+
+/* ==============================================
+   ACTIVE LAYER BADGE
+   ============================================== */
+
+.active-layer-badge {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  background: white;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1565c0;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.active-layer-badge .pulse-dot {
+  width: 10px;
+  height: 10px;
+  background: #4caf50;
+  border-radius: 50%;
+  animation: pulse 2s infinite;
+}
+
+/* ==============================================
+   SCROLLBAR STYLING (matching reference)
+   ============================================== */
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #f1f3f5; }
+::-webkit-scrollbar-thumb { background: #ced4da; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #adb5bd; }
+
+/* ==============================================
+   COMPANY / TENANT LABEL MARKERS
+   Business name text labels on map (Layer 5)
+   ============================================== */
+
+.company-label-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.company-label {
+  background: rgba(0, 0, 0, 0.75);
+  color: white;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  pointer-events: auto;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transform: translateX(-50%);
+}
+
+.company-label:hover {
+  background: rgba(33, 150, 243, 0.9);
+  border-color: white;
+}
+
+.company-tooltip {
+  background: var(--color-navy-dark) !important;
+  color: white !important;
+  border: 1px solid #2196f3 !important;
+  border-radius: 6px !important;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.4) !important;
+}
+
+.company-tooltip::before {
+  border-top-color: #2196f3 !important;
+}
+
+/* Responsive: hide right panel on smaller screens */
+@media (max-width: 1200px) {
+  .right-search-panel-responsive { display: none; }
+}
+@media (max-width: 900px) {
+  .left-sidebar-responsive { width: 220px !important; }
+}

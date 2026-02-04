@@ -1,0 +1,8 @@
+Starting test...
+2026-01-24T21:19:31.976Z - Connected to pool
+2026-01-24T21:19:32.424Z - Got client
+2026-01-24T21:19:32.480Z - Before update: {"apn":"03310414","situs_address":"","city":""}
+2026-01-24T21:19:32.544Z - Update result: 1 rows - {"apn":"03310414","situs_address":"515 E WALNUT AVE","city":"FULLERTON"}
+2026-01-24T21:19:32.594Z - After update: {"apn":"03310414","situs_address":"515 E WALNUT AVE","city":"FULLERTON"}
+2026-01-24T21:19:32.594Z - SUCCESS
+2026-01-24T21:19:32.595Z - Done

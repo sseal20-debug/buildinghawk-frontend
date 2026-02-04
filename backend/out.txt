@@ -1,0 +1,7 @@
+🦅 Fast bulk address update...
+
+Loaded 2000 records from CSV
+
+
+✅ Done! Updated 0 parcels
+DB: 4019 total, 1037 with addresses

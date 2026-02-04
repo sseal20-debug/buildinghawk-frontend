@@ -1,0 +1,21 @@
+# Deed Monitor Dependencies
+# Install with: pip install -r requirements.txt
+
+# Database
+supabase>=2.0.0
+
+# Data processing
+pandas>=2.0.0
+openpyxl>=3.1.0  # Excel support
+
+# HTTP requests
+requests>=2.31.0
+
+# Scheduling (optional - for cron alternative)
+schedule>=1.2.0
+
+# Environment management
+python-dotenv>=1.0.0
+
+# Type hints
+typing-extensions>=4.0.0

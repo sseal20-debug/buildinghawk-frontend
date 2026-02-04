@@ -1,0 +1,3 @@
+Python 3.14.2
+Hello from Python
+C:\Python314\python.exe

@@ -1,0 +1,1483 @@
+import { useEffect, useRef, useState, useCallback } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { parcelsApi, roadsApi, type PropertyMarker, type ParcelUnit, type RoadGeometry, type CompanyLabel } from '@/api/client'
+import type { Parcel, ParcelFeature, CRMEntity } from '@/types'
+import L from 'leaflet'
+import 'leaflet/dist/leaflet.css'
+import 'leaflet-draw'
+import 'leaflet-draw/dist/leaflet.draw.css'
+
+interface MapProps {
+  onParcelSelect: (parcel: Parcel) => void
+  onParcelRightClick?: (parcel: Parcel, position: { x: number; y: number }) => void
+  selectedApn?: string
+  center?: { lat: number; lng: number } | null
+  // When set, only show the parcel at this location (for search result selection)
+  selectedSearchLocation?: { lat: number; lng: number } | null
+  // GeoJSON FeatureCollection of parcels to highlight on map (from street search)
+  highlightedParcels?: import('@/types').ParcelFeatureCollection | null
+  crmMarkers?: CRMEntity[]
+  onCRMMarkerClick?: (entity: CRMEntity) => void
+  propertyMarkers?: PropertyMarker[]
+  landMarkers?: PropertyMarker[]
+  // Listing layer filters
+  showForSale?: boolean
+  showForLease?: boolean
+  showRecentSold?: boolean
+  showRecentLeased?: boolean
+  // Callback when map is ready
+  onMapReady?: (map: L.Map) => void
+  // Company labels for tenant overlay (Layer 5)
+  companyLabels?: CompanyLabel[]
+  // Active layer name for badge display
+  activeLayerName?: string
+}
+
+// Orange County bounds - expanded for better panning
+const OC_BOUNDS: L.LatLngBoundsExpression = [
+  [33.0, -118.5], // Southwest - expanded
+  [34.2, -117.0], // Northeast - expanded
+]
+
+// North Orange County center (Anaheim/Fullerton industrial area)
+const NORTH_OC_CENTER: L.LatLngExpression = [33.84, -117.89]
+const DEFAULT_ZOOM = 13
+
+type ImagerySource = 'osm' | 'esri'
+
+// Tile layer URLs - all free, no API key needed
+const TILE_LAYERS: Record<ImagerySource, { url: string; attribution: string }> = {
+  osm: {
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  },
+  esri: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    attribution: '&copy; Esri, Maxar, Earthstar Geographics',
+  },
+}
+
+// Street labels overlay - shows roads/freeways on top of satellite imagery
+// Stadia Maps now hosts Stamen tiles (Stamen shut down their tile server)
+const STAMEN_LABELS_URL = 'https://tiles.stadiamaps.com/tiles/stamen_toner_labels/{z}/{x}/{y}.png'
+// CartoDB dark labels - better contrast on satellite
+const CARTO_DARK_LABELS_URL = 'https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png'
+// CartoDB light labels
+const CARTO_LABELS_URL = 'https://{s}.basemaps.cartocdn.com/light_only_labels/{z}/{x}/{y}.png'
+
+// Minimum zoom to show street labels
+const MIN_STREET_LABEL_ZOOM = 12
+
+// ==============================================
+// BRIGHT COLOR SCHEME FOR HIGHLIGHTING
+// ==============================================
+// Parcel colors (6 colors for different search categories)
+const PARCEL_COLORS = {
+  default: '#00D4FF',      // Aqua/Cyan Blue - default parcel outline (like reference image)
+  forSale: '#FF3333',      // Bright Red - for sale
+  forLease: '#00FF00',     // Bright Green - for lease
+  recentSold: '#FF00FF',   // Bright Magenta - recently sold
+  recentLeased: '#00FFFF', // Bright Cyan - recently leased
+  subject: '#FF0000',      // Bright Red - subject property (like in image)
+  highlighted: '#FFFF00',  // Yellow highlight with fill
+  // Backup colors
+  yellow: '#FFFF00',
+  orange: '#FF8C00',
+  purple: '#9932CC',
+}
+
+// Label/overlay colors
+const LABEL_COLORS = {
+  streets: '#FFFFFF',      // White for street names
+  cities: '#FFFFFF',       // White for city names
+  freeways: '#FFCC00',     // Gold/Yellow for freeway lines
+}
+
+// Subject property address to highlight in RED
+const SUBJECT_PROPERTY_ADDRESS = '1193 N Blue Gum St'
+
+// Road overlay colors by type - BRIGHT ORANGE for freeways, TEAL/AQUA for streets
+// Thinner lines for cleaner appearance
+const ROAD_OVERLAY_STYLES = {
+  freeway: { color: 'rgba(255, 165, 0, 0.7)', weight: 6 },       // Bright orange - thin
+  highway: { color: 'rgba(255, 165, 0, 0.6)', weight: 4 },       // Orange (ramps/links)
+  primary: { color: 'rgba(0, 188, 188, 0.5)', weight: 3 },       // Teal/aqua blue
+  secondary: { color: 'rgba(0, 188, 188, 0.4)', weight: 2 },     // Teal/aqua blue (lighter)
+}
+
+// Freeway route names for tooltips
+const FREEWAY_NAMES: Record<string, string> = {
+  '91': 'Riverside Freeway',
+  '57': 'Orange Freeway',
+  '22': 'Garden Grove Freeway',
+  '55': 'Costa Mesa Freeway',
+  '5': 'Santa Ana Freeway',
+  '405': 'San Diego Freeway',
+  '241': 'Foothill/Eastern Toll Road',
+  '261': 'Eastern Toll Road',
+  '133': 'Laguna Freeway',
+  '73': 'San Joaquin Hills Toll Road',
+}
+
+// Manual shield positions for key freeways (placed on actual road centerlines)
+// These override dynamic placement to ensure correct, visible locations
+const MANUAL_SHIELD_POSITIONS: Record<string, { positions: [number, number][]; isInterstate: boolean }> = {
+  '5':   { positions: [[33.87, -117.925], [33.78, -117.885], [33.70, -117.855]], isInterstate: true },
+  '405': { positions: [[33.72, -117.935], [33.67, -117.925]], isInterstate: true },
+  '91':  { positions: [[33.878, -117.940]], isInterstate: false },  // Between I-5 & SR-57
+  '57':  { positions: [[33.91, -117.895], [33.84, -117.895]], isInterstate: false },
+  '22':  { positions: [[33.798, -117.945], [33.798, -117.870]], isInterstate: false },
+  '55':  { positions: [[33.77, -117.868], [33.83, -117.868]], isInterstate: false },
+}
+
+export function Map({
+  onParcelSelect,
+  onParcelRightClick,
+  selectedApn,
+  center,
+  selectedSearchLocation,
+  highlightedParcels,
+  crmMarkers,
+  onCRMMarkerClick,
+  propertyMarkers,
+  landMarkers,
+  showForSale = false,
+  showForLease = false,
+  showRecentSold = false,
+  showRecentLeased = false,
+  companyLabels,
+  onMapReady,
+  activeLayerName = 'New Listings/Updates',
+}: MapProps) {
+  const mapContainerRef = useRef<HTMLDivElement>(null)
+  const mapRef = useRef<L.Map | null>(null)
+  const tileLayerRef = useRef<L.TileLayer | null>(null)
+  const streetLabelsLayerRef = useRef<L.TileLayer | null>(null)
+  const parcelLayerRef = useRef<L.GeoJSON | null>(null)
+  const highlightedLayerRef = useRef<L.GeoJSON | null>(null)
+  const localLayerRef = useRef<L.GeoJSON | null>(null)
+  const crmLayerRef = useRef<L.LayerGroup | null>(null)
+  const propertyLayerRef = useRef<L.LayerGroup | null>(null)
+  const landLayerRef = useRef<L.LayerGroup | null>(null)
+  const addressLabelLayerRef = useRef<L.LayerGroup | null>(null)
+  const freewayShieldsLayerRef = useRef<L.LayerGroup | null>(null)
+  const subjectPropertyLayerRef = useRef<L.LayerGroup | null>(null)
+  const roadOverlayLayerRef = useRef<L.LayerGroup | null>(null)
+  const roadNameLabelsLayerRef = useRef<L.LayerGroup | null>(null)
+  const companyLabelLayerRef = useRef<L.LayerGroup | null>(null)
+  const drawnItemsRef = useRef<L.FeatureGroup | null>(null)
+  const drawControlRef = useRef<L.Control.Draw | null>(null)
+
+  const [mapBounds, setMapBounds] = useState<{
+    west: number
+    south: number
+    east: number
+    north: number
+  } | null>(null)
+  const [localFileLoaded, setLocalFileLoaded] = useState(false)
+  const [localFeatureCount, setLocalFeatureCount] = useState(0)
+  const [imagerySource, setImagerySource] = useState<ImagerySource>('esri')
+  const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM)
+  const [drawMode, setDrawMode] = useState<'none' | 'land' | 'building'>('none')
+  const [isDrawing, setIsDrawing] = useState(false)
+  const [classifyResult, setClassifyResult] = useState<{ count: number; classification: string } | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const queryClient = useQueryClient()
+
+  // Mutation for classifying parcels by polygon
+  const classifyMutation = useMutation({
+    mutationFn: ({ polygon, classification }: { polygon: GeoJSON.Polygon; classification: 'land' | 'building' }) =>
+      parcelsApi.classifyByPolygon(polygon, classification),
+    onSuccess: (data) => {
+      setClassifyResult({ count: data.count, classification: data.classification })
+      // Invalidate queries to refresh the markers
+      queryClient.invalidateQueries({ queryKey: ['properties'] })
+      queryClient.invalidateQueries({ queryKey: ['land'] })
+      // Clear result after 5 seconds
+      setTimeout(() => setClassifyResult(null), 5000)
+    },
+    onError: (error) => {
+      console.error('Failed to classify parcels:', error)
+      alert('Failed to classify parcels. Check console for details.')
+    },
+  })
+
+  // Minimum zoom level to show parcel layers
+  const MIN_PARCEL_ZOOM = 14
+
+  // Fetch single parcel at search location (when selected)
+  const { data: selectedParcelData } = useQuery({
+    queryKey: ['parcel-at-point', selectedSearchLocation?.lat, selectedSearchLocation?.lng],
+    queryFn: () => parcelsApi.getAtPoint(selectedSearchLocation!.lat, selectedSearchLocation!.lng),
+    enabled: !!selectedSearchLocation,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  })
+
+  // Fetch parcels within bounds (only when zoomed in enough AND no specific location selected)
+  const { data: boundsParcelsData } = useQuery({
+    queryKey: ['parcels', mapBounds],
+    queryFn: () => parcelsApi.getInBounds(mapBounds!),
+    enabled: !!mapBounds && currentZoom >= MIN_PARCEL_ZOOM && !selectedSearchLocation,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  })
+
+  // Fetch parcel units within bounds (for unit pins on multi-tenant properties)
+  const MIN_UNIT_PIN_ZOOM = 17
+  const { data: parcelUnitsData } = useQuery({
+    queryKey: ['parcel-units', mapBounds],
+    queryFn: () => parcelsApi.getUnitsInBounds(mapBounds!),
+    enabled: !!mapBounds && currentZoom >= MIN_UNIT_PIN_ZOOM,
+    staleTime: 1000 * 60 * 5, // 5 minutes
+  })
+
+  // Fetch road geometry from OpenStreetMap (freeways, highways, major roads)
+  const { data: roadGeometryData } = useQuery({
+    queryKey: ['road-geometry'],
+    queryFn: () => roadsApi.getAll(),
+    staleTime: 1000 * 60 * 60 * 24, // 24 hours - roads don't change often
+    gcTime: 1000 * 60 * 60 * 24, // Keep in cache for 24 hours
+  })
+
+  // Use selected parcel data if available, otherwise use bounds data
+  const parcelsData = selectedSearchLocation ? selectedParcelData : boundsParcelsData
+
+  // Parcel style function - AQUA BLUE with semi-transparent fill (like reference image)
+  const getParcelStyle = useCallback((feature: any, zoom: number): L.PathOptions => {
+    // Hide parcels when zoomed out
+    if (zoom < MIN_PARCEL_ZOOM) {
+      return { opacity: 0, fillOpacity: 0 }
+    }
+
+    return {
+      color: PARCEL_COLORS.default, // Aqua/Cyan Blue outline
+      weight: 3,
+      opacity: 1,
+      fillColor: PARCEL_COLORS.default,
+      fillOpacity: 0.25, // Semi-transparent blue fill
+    }
+  }, []) // No dependencies - style is stable
+
+  // Store callbacks in refs to avoid re-creating layers
+  const onParcelSelectRef = useRef(onParcelSelect)
+  const onParcelRightClickRef = useRef(onParcelRightClick)
+  
+  useEffect(() => {
+    onParcelSelectRef.current = onParcelSelect
+    onParcelRightClickRef.current = onParcelRightClick
+  }, [onParcelSelect, onParcelRightClick])
+
+  // Handle local GeoJSON file upload
+  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !mapRef.current) return
+
+    try {
+      const text = await file.text()
+      const geojson = JSON.parse(text)
+
+      // Clear existing local features
+      if (localLayerRef.current) {
+        localLayerRef.current.clearLayers()
+      }
+
+      // Create new layer with AQUA BLUE style
+      const localLayer = L.geoJSON(geojson, {
+        style: () => ({
+          color: PARCEL_COLORS.default, // Aqua/Cyan Blue
+          weight: 3,
+          opacity: 1,
+          fillColor: PARCEL_COLORS.default,
+          fillOpacity: 0.25,
+        }),
+        onEachFeature: (feature, layer) => {
+          const props = feature.properties || {}
+          const parcel: Parcel = {
+            apn: props.APN || props.apn || props.PARCEL_ID || '',
+            situs_address: props.PROP_ADDRESS || props.Address || props.address || '',
+            city: props.PROP_CITY || props.city || props.CITY_NAME || '',
+            zip: props.PROP_ZIP || props.zip || '',
+            land_sf: props.LAND_SF || props.land_sf || props.LOT_SIZE || 0,
+            zoning: props.ZONING || props.zoning || props.LAND_USE || '',
+            building_count: props.building_count || 1,
+            unit_count: props.unit_count || 0,
+            vacant_count: props.vacant_count || 0,
+          }
+          
+          // Left click - select parcel (use ref to avoid stale closure)
+          layer.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e)
+            onParcelSelectRef.current(parcel)
+          })
+          
+          // Right click - context menu (use ref to avoid stale closure)
+          layer.on('contextmenu', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e)
+            L.DomEvent.preventDefault(e)
+            if (onParcelRightClickRef.current) {
+              onParcelRightClickRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
+            }
+          })
+        },
+      })
+
+      localLayer.addTo(mapRef.current)
+      localLayerRef.current = localLayer
+
+      const featureCount = geojson.features?.length || 1
+      setLocalFeatureCount(featureCount)
+      setLocalFileLoaded(true)
+
+      // Fit map to loaded features
+      const bounds = localLayer.getBounds()
+      if (bounds.isValid()) {
+        mapRef.current.fitBounds(bounds, { padding: [50, 50] })
+      }
+
+      console.log(`Loaded ${featureCount} features from ${file.name}`)
+    } catch (err) {
+      console.error('Failed to load GeoJSON:', err)
+      alert('Failed to load file. Make sure it\'s valid GeoJSON.')
+    }
+  }, []) // No dependencies - uses refs for callbacks
+
+  // Clear local layer
+  const clearLocalLayer = useCallback(() => {
+    if (localLayerRef.current) {
+      localLayerRef.current.clearLayers()
+      setLocalFileLoaded(false)
+      setLocalFeatureCount(0)
+    }
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }, [])
+
+  // Switch imagery source
+  const switchImagery = useCallback((source: ImagerySource) => {
+    const map = mapRef.current
+    if (!map) return
+
+    // Remove existing tile layer
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current)
+    }
+
+    // Add new tile layer
+    const { url, attribution } = TILE_LAYERS[source]
+    const newTileLayer = L.tileLayer(url, {
+      attribution,
+      maxZoom: 19,
+    })
+    newTileLayer.addTo(map)
+    tileLayerRef.current = newTileLayer
+
+    // Re-add street labels on top (if zoomed in enough and using satellite)
+    if (source === 'esri' && streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
+      if (!map.hasLayer(streetLabelsLayerRef.current)) {
+        streetLabelsLayerRef.current.addTo(map)
+      }
+      // Ensure parcel layer is on top of labels
+      if (parcelLayerRef.current) {
+        parcelLayerRef.current.bringToFront()
+      }
+    } else if (source === 'osm' && streetLabelsLayerRef.current) {
+      // Don't show labels overlay on OSM (it already has labels)
+      if (map.hasLayer(streetLabelsLayerRef.current)) {
+        map.removeLayer(streetLabelsLayerRef.current)
+      }
+    }
+
+    setImagerySource(source)
+  }, [])
+
+  // Initialize map
+  useEffect(() => {
+    if (!mapContainerRef.current || mapRef.current) return
+
+    // Create map with explicit handlers enabled
+    const map = L.map(mapContainerRef.current, {
+      center: NORTH_OC_CENTER,
+      zoom: DEFAULT_ZOOM,
+      maxBounds: OC_BOUNDS,
+      maxBoundsViscosity: 0.5,
+      zoomControl: true,
+      scrollWheelZoom: true,
+      dragging: true,
+      doubleClickZoom: true,
+      touchZoom: true,
+    })
+
+    mapRef.current = map
+
+    // Notify parent that map is ready
+    onMapReady?.(map)
+
+    // Add default tile layer (ESRI aerial)
+    const { url, attribution } = TILE_LAYERS.esri
+    const tileLayer = L.tileLayer(url, {
+      attribution,
+      maxZoom: 19,
+    })
+    tileLayer.addTo(map)
+    tileLayerRef.current = tileLayer
+
+    // Create custom pane for bright street labels (higher z-index)
+    map.createPane('labelsPane')
+    map.getPane('labelsPane')!.style.zIndex = '650'
+    map.getPane('labelsPane')!.style.pointerEvents = 'none'
+
+    // Add street labels overlay - CartoDB dark_only_labels
+    // Light text designed for dark/satellite backgrounds, includes freeway shields
+    const streetLabelsLayer = L.tileLayer(CARTO_LABELS_URL, {
+      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+      maxZoom: 19,
+      opacity: 1,
+      pane: 'labelsPane',
+    })
+    streetLabelsLayer.addTo(map)
+    streetLabelsLayerRef.current = streetLabelsLayer
+
+    // Create empty parcel layer with AQUA BLUE style
+    const parcelLayer = L.geoJSON(undefined, {
+      style: () => ({
+        color: PARCEL_COLORS.default, // Aqua/Cyan Blue
+        weight: 3,
+        opacity: 1,
+        fillColor: PARCEL_COLORS.default,
+        fillOpacity: 0.25,
+      }),
+    })
+    parcelLayer.addTo(map)
+    parcelLayerRef.current = parcelLayer
+
+    // Create highlighted parcels layer (for street search highlighting)
+    const highlightedLayer = L.geoJSON(undefined, {
+      style: () => ({
+        color: '#FF6B00',   // Bright orange for search highlights
+        weight: 4,
+        opacity: 1,
+        fillColor: '#FF6B00',
+        fillOpacity: 0.35,
+      }),
+    })
+    highlightedLayer.addTo(map)
+    highlightedLayerRef.current = highlightedLayer
+
+    // Create CRM markers layer
+    const crmLayer = L.layerGroup()
+    crmLayer.addTo(map)
+    crmLayerRef.current = crmLayer
+
+    // Create property markers layer (light blue)
+    const propertyLayer = L.layerGroup()
+    propertyLayer.addTo(map)
+    propertyLayerRef.current = propertyLayer
+
+    // Create land markers layer (yellow)
+    const landLayer = L.layerGroup()
+    landLayer.addTo(map)
+    landLayerRef.current = landLayer
+
+    // Create address label layer (for unit/address pins)
+    const addressLabelLayer = L.layerGroup()
+    addressLabelLayer.addTo(map)
+    addressLabelLayerRef.current = addressLabelLayer
+
+    // Create freeway shields layer
+    const freewayShieldsLayer = L.layerGroup()
+    freewayShieldsLayer.addTo(map)
+    freewayShieldsLayerRef.current = freewayShieldsLayer
+
+    // Freeway shields are added dynamically when road geometry loads (see useEffect below)
+
+    // Create subject property layer (for highlighting specific property in RED)
+    const subjectPropertyLayer = L.layerGroup()
+    subjectPropertyLayer.addTo(map)
+    subjectPropertyLayerRef.current = subjectPropertyLayer
+
+    // Create road overlay layer (semi-transparent white along freeways and major roads)
+    // This will be populated dynamically when road geometry data is fetched
+    map.createPane('roadOverlayPane')
+    map.getPane('roadOverlayPane')!.style.zIndex = '420' // Below labels (650) but above tiles
+    map.getPane('roadOverlayPane')!.style.pointerEvents = 'none'
+
+    const roadOverlayLayer = L.layerGroup()
+    roadOverlayLayer.addTo(map)
+    roadOverlayLayerRef.current = roadOverlayLayer
+
+    // Create pane for road name labels (above road overlays, below parcels)
+    map.createPane('roadNameLabelsPane')
+    map.getPane('roadNameLabelsPane')!.style.zIndex = '430' // Above road overlays (420)
+    map.getPane('roadNameLabelsPane')!.style.pointerEvents = 'none'
+
+    const roadNameLabelsLayer = L.layerGroup()
+    roadNameLabelsLayer.addTo(map)
+    roadNameLabelsLayerRef.current = roadNameLabelsLayer
+
+    // Create company label layer (for tenant/business name overlay)
+    const companyLabelLayer = L.layerGroup()
+    companyLabelLayer.addTo(map)
+    companyLabelLayerRef.current = companyLabelLayer
+
+    // Road overlays and labels will be added dynamically via useEffect when roadGeometryData loads
+
+    // Initialize drawing layer and controls
+    const drawnItems = new L.FeatureGroup()
+    map.addLayer(drawnItems)
+    drawnItemsRef.current = drawnItems
+
+    // Create draw control with no drawing buttons (we use custom UI buttons)
+    // Only include edit controls for modifying/deleting drawn shapes
+    const drawControl = new (L.Control as any).Draw({
+      position: 'topleft',
+      draw: false, // Disable default draw buttons, we use our own
+      edit: {
+        featureGroup: drawnItems,
+        remove: true,
+        edit: false, // Disable edit button too, only show remove
+      },
+    })
+    map.addControl(drawControl)
+    drawControlRef.current = drawControl
+
+    // Handle polygon creation - this will be managed by a separate useEffect
+    // to access the current drawMode state
+
+    // Update bounds on map move
+    const updateBounds = () => {
+      const bounds = map.getBounds()
+      setMapBounds({
+        west: bounds.getWest(),
+        south: bounds.getSouth(),
+        east: bounds.getEast(),
+        north: bounds.getNorth(),
+      })
+      setCurrentZoom(map.getZoom())
+    }
+
+    map.on('moveend', updateBounds)
+    map.on('zoomend', updateBounds)
+    updateBounds()
+
+    return () => {
+      map.remove()
+      mapRef.current = null
+    }
+  }, []) // Empty deps - only run once on mount
+
+  // Show/hide street labels based on zoom level
+  useEffect(() => {
+    const map = mapRef.current
+    const streetLabelsLayer = streetLabelsLayerRef.current
+    if (!map || !streetLabelsLayer) return
+
+    if (currentZoom >= MIN_STREET_LABEL_ZOOM) {
+      if (!map.hasLayer(streetLabelsLayer)) {
+        streetLabelsLayer.addTo(map)
+      }
+      // Keep parcels on top of labels
+      if (parcelLayerRef.current) {
+        parcelLayerRef.current.bringToFront()
+      }
+      if (localLayerRef.current) {
+        localLayerRef.current.bringToFront()
+      }
+    } else {
+      if (map.hasLayer(streetLabelsLayer)) {
+        map.removeLayer(streetLabelsLayer)
+      }
+    }
+  }, [currentZoom])
+
+  // Render road overlays and freeway shields when geometry data loads from OpenStreetMap
+  useEffect(() => {
+    const roadOverlayLayer = roadOverlayLayerRef.current
+    const roadNameLabelsLayer = roadNameLabelsLayerRef.current
+    const freewayShieldsLayer = freewayShieldsLayerRef.current
+    if (!roadOverlayLayer || !roadNameLabelsLayer || !freewayShieldsLayer || !roadGeometryData) return
+
+    // Clear existing overlays, labels, and shields
+    roadOverlayLayer.clearLayers()
+    roadNameLabelsLayer.clearLayers()
+    freewayShieldsLayer.clearLayers()
+
+    console.log(`Rendering ${roadGeometryData.features.length} road overlay segments`)
+
+    // Collect freeway segments grouped by route number for shield placement
+    const freewaySegments: Record<string, { coords: [number, number][][]; isInterstate: boolean }> = {}
+
+    // Add polylines for each road segment
+    roadGeometryData.features.forEach((feature) => {
+      const roadType = feature.properties.roadType as keyof typeof ROAD_OVERLAY_STYLES
+      const style = ROAD_OVERLAY_STYLES[roadType] || ROAD_OVERLAY_STYLES.secondary
+
+      // Convert [lon, lat] to [lat, lon] for Leaflet
+      const coords = feature.geometry.coordinates.map(
+        ([lon, lat]) => [lat, lon] as L.LatLngExpression
+      )
+
+      // Add the road overlay polyline
+      const polyline = L.polyline(coords, {
+        color: style.color,
+        weight: style.weight,
+        opacity: 1,
+        lineCap: 'round',
+        lineJoin: 'round',
+        pane: 'roadOverlayPane',
+        interactive: false,
+      })
+      roadOverlayLayer.addLayer(polyline)
+
+      // Collect freeway segments for shield placement
+      if (roadType === 'freeway' && feature.properties.ref) {
+        // Parse route numbers from ref (e.g. "CA 91", "I 5", "I 405", "91;57")
+        const refs = feature.properties.ref.split(';')
+        refs.forEach(rawRef => {
+          const cleaned = rawRef.trim()
+          // Extract route number
+          const match = cleaned.match(/(\d+)/)
+          if (!match) return
+          const routeNum = match[1]
+          const isInterstate = cleaned.startsWith('I ') || cleaned.startsWith('I-')
+
+          if (!freewaySegments[routeNum]) {
+            freewaySegments[routeNum] = { coords: [], isInterstate }
+          }
+          freewaySegments[routeNum].coords.push(
+            feature.geometry.coordinates.map(([lon, lat]) => [lat, lon] as [number, number])
+          )
+        })
+      }
+    })
+
+    // Helper to add a shield marker at a specific position
+    const addShield = (routeNum: string, lat: number, lng: number, isInterstate: boolean) => {
+      const shieldHtml = isInterstate
+        ? `<div class="freeway-shield interstate">
+            <div class="shield-inner">${routeNum}</div>
+          </div>`
+        : `<div class="freeway-shield ca-state">
+            <div class="shield-inner">${routeNum}</div>
+          </div>`
+
+      const icon = L.divIcon({
+        className: 'freeway-shield-container',
+        html: shieldHtml,
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
+      })
+
+      const marker = L.marker([lat, lng], { icon, interactive: false })
+      const name = FREEWAY_NAMES[routeNum] || `Route ${routeNum}`
+      marker.bindTooltip(name, {
+        permanent: false,
+        direction: 'top',
+        className: 'freeway-tooltip'
+      })
+      freewayShieldsLayer.addLayer(marker)
+    }
+
+    // Track which routes got manual shields
+    const manualRoutes = new Set<string>()
+
+    // Place manual shields first (precise positioning for key freeways)
+    Object.entries(MANUAL_SHIELD_POSITIONS).forEach(([routeNum, { positions, isInterstate }]) => {
+      manualRoutes.add(routeNum)
+      positions.forEach(([lat, lng]) => addShield(routeNum, lat, lng, isInterstate))
+    })
+
+    // Dynamic placement for remaining freeways not in manual list
+    Object.entries(freewaySegments).forEach(([routeNum, { coords: segments, isInterstate }]) => {
+      if (manualRoutes.has(routeNum)) return // Skip — already placed manually
+
+      const segmentsWithLength = segments.map(seg => {
+        let len = 0
+        for (let i = 1; i < seg.length; i++) {
+          const dlat = seg[i][0] - seg[i - 1][0]
+          const dlng = seg[i][1] - seg[i - 1][1]
+          len += Math.sqrt(dlat * dlat + dlng * dlng)
+        }
+        return { seg, len }
+      }).sort((a, b) => b.len - a.len)
+
+      const shieldCount = Math.min(2, segmentsWithLength.length)
+      const placedPositions: [number, number][] = []
+
+      for (let i = 0; i < segmentsWithLength.length && placedPositions.length < shieldCount; i++) {
+        const seg = segmentsWithLength[i].seg
+        if (seg.length < 2) continue
+        const midIdx = Math.floor(seg.length / 2)
+        const midLat = seg[midIdx][0]
+        const midLng = seg[midIdx][1]
+
+        const tooClose = placedPositions.some(([pLat, pLng]) =>
+          Math.abs(pLat - midLat) + Math.abs(pLng - midLng) < 0.04
+        )
+        if (tooClose) continue
+
+        placedPositions.push([midLat, midLng])
+        addShield(routeNum, midLat, midLng, isInterstate)
+      }
+    })
+
+    console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments`)
+  }, [roadGeometryData])
+
+  // Update parcels when data changes (but not on selection change)
+  useEffect(() => {
+    if (!parcelLayerRef.current || !parcelsData) return
+
+    const parcelLayer = parcelLayerRef.current
+    parcelLayer.clearLayers()
+
+    // Clear subject property markers
+    if (subjectPropertyLayerRef.current) {
+      subjectPropertyLayerRef.current.clearLayers()
+    }
+
+    // Add new features - AQUA BLUE default, RED for subject property
+    parcelsData.features.forEach((feature: ParcelFeature) => {
+      try {
+        // Check if this is the subject property (1193 N Blue Gum St)
+        const address = feature.properties.address || ''
+        const isSubjectProperty = address.toLowerCase().includes('1193') &&
+          address.toLowerCase().includes('blue gum')
+
+        // Use RED for subject property, AQUA BLUE for others
+        const parcelColor = isSubjectProperty ? PARCEL_COLORS.subject : PARCEL_COLORS.default
+        const parcelWeight = isSubjectProperty ? 4 : 3
+        const parcelFillOpacity = isSubjectProperty ? 0.35 : 0.25
+
+        const layer = L.geoJSON({
+          type: 'Feature',
+          geometry: feature.geometry,
+          properties: feature.properties,
+        } as any, {
+          style: () => ({
+            color: parcelColor,
+            weight: parcelWeight,
+            opacity: 1,
+            fillColor: parcelColor,
+            fillOpacity: parcelFillOpacity,
+          }),
+          onEachFeature: (f, l) => {
+            const parcel: Parcel = {
+              apn: feature.properties.apn,
+              situs_address: feature.properties.address,
+              city: feature.properties.city,
+              zip: feature.properties.zip,
+              land_sf: feature.properties.land_sf,
+              zoning: feature.properties.zoning,
+              building_count: feature.properties.building_count,
+              unit_count: feature.properties.unit_count,
+              vacant_count: feature.properties.vacant_count,
+            }
+
+            // Add "SUBJECT" label for subject property
+            if (isSubjectProperty && subjectPropertyLayerRef.current) {
+              const centroid = feature.properties.centroid as { coordinates: [number, number] } | undefined
+              if (centroid && centroid.coordinates) {
+                const [lng, lat] = centroid.coordinates
+                const subjectIcon = L.divIcon({
+                  className: 'subject-property-marker',
+                  html: `<div class="subject-property-label">SUBJECT</div>`,
+                  iconSize: [80, 40],
+                  iconAnchor: [40, 50],
+                })
+                const subjectMarker = L.marker([lat, lng], { icon: subjectIcon })
+                subjectPropertyLayerRef.current.addLayer(subjectMarker)
+              }
+            }
+
+            // Left click - select parcel (use ref)
+            l.on('click', (e: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(e)
+              onParcelSelectRef.current(parcel)
+            })
+
+            // Right click - context menu (use ref)
+            l.on('contextmenu', (e: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(e)
+              L.DomEvent.preventDefault(e)
+              if (onParcelRightClickRef.current) {
+                onParcelRightClickRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
+              }
+            })
+          },
+        })
+        parcelLayer.addLayer(layer)
+      } catch (e) {
+        // Skip invalid geometries
+      }
+    })
+  }, [parcelsData]) // Only depends on data, not callbacks
+
+  // Update styles when zoom changes (only visibility) - AQUA BLUE
+  useEffect(() => {
+    const style = currentZoom < MIN_PARCEL_ZOOM
+      ? { opacity: 0, fillOpacity: 0 }
+      : {
+          color: PARCEL_COLORS.default, // Aqua/Cyan Blue
+          weight: 3,
+          opacity: 1,
+          fillColor: PARCEL_COLORS.default,
+          fillOpacity: 0.25
+        }
+
+    if (parcelLayerRef.current) {
+      parcelLayerRef.current.setStyle(() => style)
+    }
+    if (localLayerRef.current) {
+      localLayerRef.current.setStyle(() => style)
+    }
+  }, [currentZoom])
+
+  // Handle center prop changes
+  useEffect(() => {
+    if (center && mapRef.current) {
+      mapRef.current.setView([center.lat, center.lng], 17)
+    }
+  }, [center])
+
+  // Render highlighted parcels from street search
+  useEffect(() => {
+    const highlightedLayer = highlightedLayerRef.current
+    const map = mapRef.current
+    if (!highlightedLayer || !map) return
+
+    highlightedLayer.clearLayers()
+
+    if (!highlightedParcels || !highlightedParcels.features || highlightedParcels.features.length === 0) return
+
+    // Add each matching parcel with bright orange highlighting
+    highlightedParcels.features.forEach((feature: ParcelFeature) => {
+      try {
+        if (!feature.geometry) return
+        const layer = L.geoJSON({
+          type: 'Feature',
+          geometry: feature.geometry,
+          properties: feature.properties || {},
+        } as GeoJSON.Feature, {
+          style: () => ({
+            color: '#FF6B00',      // Bright orange border
+            weight: 4,
+            opacity: 1,
+            fillColor: '#FF6B00',  // Orange fill
+            fillOpacity: 0.35,
+          }),
+        })
+
+        // Add click handler to select the parcel
+        layer.on('click', () => {
+          const props = feature.properties
+          if (props && onParcelSelectRef.current) {
+            onParcelSelectRef.current({
+              apn: feature.id as string || props.apn,
+              situs_address: props.situs_address || props.address,
+              city: props.city,
+              zip: props.zip,
+              land_sf: props.land_sf,
+              zoning: props.zoning,
+            } as Parcel)
+          }
+        })
+
+        // Add right-click handler
+        layer.on('contextmenu', (e: L.LeafletEvent) => {
+          const mouseEvent = e as L.LeafletMouseEvent
+          const props = feature.properties
+          if (props && onParcelRightClickRef.current) {
+            onParcelRightClickRef.current(
+              {
+                apn: feature.id as string || props.apn,
+                situs_address: props.situs_address || props.address,
+                city: props.city,
+                zip: props.zip,
+                land_sf: props.land_sf,
+                zoning: props.zoning,
+              } as Parcel,
+              { x: mouseEvent.originalEvent.clientX, y: mouseEvent.originalEvent.clientY }
+            )
+          }
+        })
+
+        highlightedLayer.addLayer(layer)
+      } catch (e) {
+        // Skip invalid geometries
+      }
+    })
+
+    // Fit map bounds to show all highlighted parcels
+    const bounds = highlightedLayer.getBounds()
+    if (bounds.isValid()) {
+      map.fitBounds(bounds, { padding: [80, 80], maxZoom: 17 })
+    }
+  }, [highlightedParcels])
+
+  // Re-enable map handlers after potential focus loss and handle resize
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    // Invalidate map size to handle layout changes
+    const invalidateSize = () => {
+      map.invalidateSize({ animate: false })
+    }
+
+    // Listen for window resize
+    window.addEventListener('resize', invalidateSize)
+
+    // Periodically check and re-enable handlers if disabled
+    const interval = setInterval(() => {
+      if (map) {
+        // Re-enable handlers if somehow disabled
+        if (!map.dragging.enabled()) {
+          map.dragging.enable()
+        }
+        if (!map.scrollWheelZoom.enabled()) {
+          map.scrollWheelZoom.enable()
+        }
+        if (!map.doubleClickZoom.enabled()) {
+          map.doubleClickZoom.enable()
+        }
+      }
+    }, 500)
+
+    // Initial invalidate after mount - multiple delays to handle sidebar layout
+    setTimeout(invalidateSize, 100)
+    setTimeout(invalidateSize, 500)
+    setTimeout(invalidateSize, 1500)
+
+    return () => {
+      window.removeEventListener('resize', invalidateSize)
+      clearInterval(interval)
+    }
+  }, [])
+
+  // Handle CRM markers
+  useEffect(() => {
+    const crmLayer = crmLayerRef.current
+    if (!crmLayer) return
+
+    // Clear existing markers
+    crmLayer.clearLayers()
+
+    // Add new CRM markers
+    if (crmMarkers && crmMarkers.length > 0) {
+      crmMarkers.forEach((entity) => {
+        if (entity.lat && entity.lng) {
+          const isProspect = entity.crm_type === 'prospect'
+
+          // Create custom icon
+          const icon = L.divIcon({
+            className: 'custom-crm-marker',
+            html: `<div style="
+              width: 24px;
+              height: 24px;
+              border-radius: 50%;
+              background-color: ${isProspect ? '#f59e0b' : '#22c55e'};
+              border: 2px solid white;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: white;
+              font-weight: bold;
+              font-size: 11px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            ">${isProspect ? 'P' : 'C'}</div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12],
+          })
+
+          const marker = L.marker([entity.lat, entity.lng], { icon })
+          marker.bindTooltip(entity.entity_name)
+          marker.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e)
+            onCRMMarkerClick?.(entity)
+          })
+          crmLayer.addLayer(marker)
+        }
+      })
+    }
+  }, [crmMarkers, onCRMMarkerClick])
+
+  // Handle property markers (light blue)
+  useEffect(() => {
+    const propertyLayer = propertyLayerRef.current
+    if (!propertyLayer) return
+
+    // Clear existing markers
+    propertyLayer.clearLayers()
+
+    // Add new property markers (Buildings - GREEN)
+    if (propertyMarkers && propertyMarkers.length > 0) {
+      propertyMarkers.forEach((property) => {
+        if (property.lat && property.lng) {
+          // Create custom icon - GREEN for buildings
+          const icon = L.divIcon({
+            className: 'custom-property-marker',
+            html: `<div style="
+              width: 20px;
+              height: 20px;
+              border-radius: 50%;
+              background-color: #22c55e;
+              border: 2px solid white;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: white;
+              font-weight: bold;
+              font-size: 10px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            ">B</div>`,
+            iconSize: [20, 20],
+            iconAnchor: [10, 10],
+          })
+
+          const marker = L.marker([property.lat, property.lng], { icon })
+          const tooltipContent = `${property.address}, ${property.city}${property.building_sf ? ` - ${property.building_sf.toLocaleString()} SF` : ''}`
+          marker.bindTooltip(tooltipContent)
+          marker.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e)
+            // Create a parcel object for selection
+            const parcel: Parcel = {
+              apn: property.id,
+              situs_address: property.address,
+              city: property.city,
+              zip: '',
+              land_sf: property.land_sf || 0,
+              zoning: '',
+              building_count: property.building_count,
+            }
+            onParcelSelectRef.current(parcel)
+          })
+          propertyLayer.addLayer(marker)
+        }
+      })
+    }
+  }, [propertyMarkers]) // Only depends on data
+
+  // Handle land markers (yellow)
+  useEffect(() => {
+    const landLayer = landLayerRef.current
+    if (!landLayer) return
+
+    // Clear existing markers
+    landLayer.clearLayers()
+
+    // Add new land markers
+    if (landMarkers && landMarkers.length > 0) {
+      landMarkers.forEach((land) => {
+        if (land.lat && land.lng) {
+          // Create custom icon - yellow color
+          const icon = L.divIcon({
+            className: 'custom-land-marker',
+            html: `<div style="
+              width: 20px;
+              height: 20px;
+              border-radius: 50%;
+              background-color: #fbbf24;
+              border: 2px solid white;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              color: #1e3a5f;
+              font-weight: bold;
+              font-size: 10px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            ">L</div>`,
+            iconSize: [20, 20],
+            iconAnchor: [10, 10],
+          })
+
+          const marker = L.marker([land.lat, land.lng], { icon })
+          const tooltipContent = `${land.address}, ${land.city}${land.land_sf ? ` - ${(land.land_sf / 43560).toFixed(2)} acres` : ''}`
+          marker.bindTooltip(tooltipContent)
+          marker.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e)
+            // Create a parcel object for selection
+            const parcel: Parcel = {
+              apn: land.id,
+              situs_address: land.address,
+              city: land.city,
+              zip: '',
+              land_sf: land.land_sf || 0,
+              zoning: '',
+              building_count: 0,
+            }
+            onParcelSelectRef.current(parcel)
+          })
+          landLayer.addLayer(marker)
+        }
+      })
+    }
+  }, [landMarkers]) // Only depends on data
+
+  // Handle company labels (tenant business names from map logo import)
+  const MIN_COMPANY_LABEL_ZOOM = 15
+  useEffect(() => {
+    const companyLabelLayer = companyLabelLayerRef.current
+    if (!companyLabelLayer) return
+
+    // Clear existing labels
+    companyLabelLayer.clearLayers()
+
+    // Only show at zoom >= 15 to prevent clutter
+    if (currentZoom < MIN_COMPANY_LABEL_ZOOM) return
+
+    if (companyLabels && companyLabels.length > 0) {
+      companyLabels.forEach((label) => {
+        if (label.lat && label.lng) {
+          const icon = L.divIcon({
+            className: 'company-label-marker',
+            html: `<div class="company-label">${label.name}</div>`,
+            iconSize: [0, 0],
+            iconAnchor: [0, 12],
+          })
+
+          const marker = L.marker([label.lat, label.lng], { icon })
+
+          // Tooltip with full address on hover
+          if (label.address) {
+            marker.bindTooltip(`${label.name}<br/><span style="font-size:10px;opacity:0.8">${label.address}</span>`, {
+              direction: 'top',
+              offset: [0, -16],
+              className: 'company-tooltip',
+            })
+          }
+
+          // Click to select the parcel at this location
+          marker.on('click', (e: L.LeafletMouseEvent) => {
+            L.DomEvent.stopPropagation(e)
+            const parcel: Parcel = {
+              apn: String(label.id),
+              situs_address: label.address,
+              city: label.city,
+              zip: '',
+              land_sf: 0,
+              zoning: '',
+              building_count: 0,
+            }
+            onParcelSelectRef.current(parcel)
+          })
+
+          companyLabelLayer.addLayer(marker)
+        }
+      })
+    }
+  }, [companyLabels, currentZoom])
+
+  // Handle address label pins - show precise unit locations from parcel_unit table
+  // These are geocoded addresses for multi-tenant industrial parks
+  useEffect(() => {
+    const addressLabelLayer = addressLabelLayerRef.current
+    if (!addressLabelLayer) return
+
+    // Clear existing markers
+    addressLabelLayer.clearLayers()
+
+    // Only show at high zoom levels
+    if (currentZoom < MIN_UNIT_PIN_ZOOM) return
+
+    // Add pins from parcel_unit table (precise geocoded locations)
+    if (parcelUnitsData && parcelUnitsData.length > 0) {
+      parcelUnitsData.forEach((unit: ParcelUnit) => {
+        const lat = unit.latitude
+        const lng = unit.longitude
+
+        // Extract unit number from address or use stored unit_number
+        let unitNumber = unit.unit_number
+        if (!unitNumber) {
+          const match = unit.unit_address.match(/#\s*(\w+)|Ste\.?\s+(\w+)|Suite\s+(\w+)|Unit\s+(\w+)/i)
+          if (match) {
+            unitNumber = match[1] || match[2] || match[3] || match[4]
+          }
+        }
+
+        // Create pin icon with unit number or street number
+        const displayLabel = unitNumber || unit.unit_address.split(' ')[0] || '?'
+
+        const icon = L.divIcon({
+          className: 'address-label-pin',
+          html: `<div style="
+            background-color: #dc2626;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            transform: translate(-50%, -100%);
+            position: relative;
+          ">
+            ${displayLabel}
+            <div style="
+              position: absolute;
+              bottom: -8px;
+              left: 50%;
+              transform: translateX(-50%);
+              width: 0;
+              height: 0;
+              border-left: 6px solid transparent;
+              border-right: 6px solid transparent;
+              border-top: 8px solid #dc2626;
+            "></div>
+          </div>`,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+        })
+
+        const marker = L.marker([lat, lng], { icon })
+
+        // Full address tooltip on hover
+        marker.bindTooltip(unit.unit_address, {
+          direction: 'top',
+          offset: [0, -20],
+          className: 'address-tooltip'
+        })
+
+        // Click to navigate to parcel
+        marker.on('click', (e: L.LeafletMouseEvent) => {
+          L.DomEvent.stopPropagation(e)
+          // Create a parcel object for the click
+          const parcel: Parcel = {
+            apn: unit.parcel_apn,
+            situs_address: unit.unit_address,
+            city: unit.city || '',
+            zip: '',
+            land_sf: 0,
+            zoning: '',
+            building_count: 0,
+          }
+          onParcelSelectRef.current(parcel)
+        })
+
+        addressLabelLayer.addLayer(marker)
+      })
+    }
+
+    // Also show pins for condos (parcels with unit numbers in the address)
+    // These are separate APNs with their own centroid
+    if (parcelsData && parcelsData.features.length > 0) {
+      parcelsData.features.forEach((feature: ParcelFeature) => {
+        const address = feature.properties.address || ''
+
+        // ONLY show pins for addresses with unit numbers (condos)
+        const unitMatch = address.match(/#\s*(\w+)|Ste\.?\s+(\w+)|Suite\s+(\w+)|Unit\s+(\w+)/i)
+        if (!unitMatch) return
+
+        // Get centroid coordinates
+        const centroid = feature.properties.centroid as { coordinates: [number, number] } | undefined
+        if (!centroid || !centroid.coordinates) return
+
+        const [lng, lat] = centroid.coordinates
+        const unitNumber = unitMatch[1] || unitMatch[2] || unitMatch[3] || unitMatch[4]
+
+        const icon = L.divIcon({
+          className: 'address-label-pin',
+          html: `<div style="
+            background-color: #7c3aed;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 600;
+            white-space: nowrap;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+            transform: translate(-50%, -100%);
+            position: relative;
+          ">
+            ${unitNumber}
+            <div style="
+              position: absolute;
+              bottom: -8px;
+              left: 50%;
+              transform: translateX(-50%);
+              width: 0;
+              height: 0;
+              border-left: 6px solid transparent;
+              border-right: 6px solid transparent;
+              border-top: 8px solid #7c3aed;
+            "></div>
+          </div>`,
+          iconSize: [0, 0],
+          iconAnchor: [0, 0],
+        })
+
+        const marker = L.marker([lat, lng], { icon })
+
+        marker.bindTooltip(address, {
+          direction: 'top',
+          offset: [0, -20],
+          className: 'address-tooltip'
+        })
+
+        marker.on('click', (e: L.LeafletMouseEvent) => {
+          L.DomEvent.stopPropagation(e)
+          const parcel: Parcel = {
+            apn: feature.properties.apn,
+            situs_address: feature.properties.address,
+            city: feature.properties.city,
+            zip: feature.properties.zip,
+            land_sf: feature.properties.land_sf,
+            zoning: feature.properties.zoning,
+            building_count: feature.properties.building_count,
+            unit_count: feature.properties.unit_count,
+            vacant_count: feature.properties.vacant_count,
+          }
+          onParcelSelectRef.current(parcel)
+        })
+
+        addressLabelLayer.addLayer(marker)
+      })
+    }
+  }, [parcelUnitsData, parcelsData, currentZoom]) // Re-render when data or zoom changes
+
+  // Handle polygon draw events with current drawMode
+  useEffect(() => {
+    const map = mapRef.current
+    const drawnItems = drawnItemsRef.current
+    if (!map || !drawnItems) return
+
+    const handleDrawCreated = (event: any) => {
+      const layer = event.layer
+
+      // Get the polygon geometry in GeoJSON format
+      const geoJson = layer.toGeoJSON()
+      const polygon = geoJson.geometry as GeoJSON.Polygon
+
+      // Set polygon color based on current draw mode
+      const color = drawMode === 'building' ? '#22c55e' : '#fbbf24'
+      layer.setStyle({
+        color: color,
+        fillColor: color,
+        fillOpacity: 0.3,
+      })
+
+      drawnItems.addLayer(layer)
+
+      // Call the classification API
+      if (drawMode !== 'none') {
+        classifyMutation.mutate({
+          polygon,
+          classification: drawMode,
+        })
+      }
+
+      // Reset draw mode after drawing
+      setDrawMode('none')
+      setIsDrawing(false)
+    }
+
+    const handleDrawStart = () => {
+      setIsDrawing(true)
+    }
+
+    const handleDrawStop = () => {
+      setIsDrawing(false)
+    }
+
+    map.on(L.Draw.Event.CREATED, handleDrawCreated)
+    map.on(L.Draw.Event.DRAWSTART, handleDrawStart)
+    map.on(L.Draw.Event.DRAWSTOP, handleDrawStop)
+
+    return () => {
+      map.off(L.Draw.Event.CREATED, handleDrawCreated)
+      map.off(L.Draw.Event.DRAWSTART, handleDrawStart)
+      map.off(L.Draw.Event.DRAWSTOP, handleDrawStop)
+    }
+  }, [drawMode, classifyMutation])
+
+  // Function to start drawing with specific mode
+  const startDrawing = useCallback((mode: 'land' | 'building') => {
+    const map = mapRef.current
+    if (!map) return
+
+    setDrawMode(mode)
+
+    // Trigger the polygon draw programmatically
+    // Cast to any to work around leaflet-draw TypeScript type issues
+    new (L.Draw as any).Polygon(map as any, {
+      allowIntersection: false,
+      showArea: true,
+      shapeOptions: {
+        color: mode === 'building' ? '#22c55e' : '#fbbf24',
+        weight: 3,
+        fillOpacity: 0.3,
+      },
+    }).enable()
+  }, [])
+
+  // Function to clear all drawn polygons
+  const clearDrawnPolygons = useCallback(() => {
+    const drawnItems = drawnItemsRef.current
+    if (drawnItems) {
+      drawnItems.clearLayers()
+    }
+    setClassifyResult(null)
+  }, [])
+
+  return (
+    <div className="relative w-full h-full" style={{ pointerEvents: 'auto' }}>
+      <div ref={mapContainerRef} className="w-full h-full" style={{ pointerEvents: 'auto' }} />
+
+      {/* Imagery Source Selector */}
+      <div className="absolute top-20 right-4 z-[1000]">
+        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
+          <div className="text-xs font-medium text-gray-500 px-3 py-1 bg-gray-50 border-b">
+            Map Style
+          </div>
+          <div className="flex flex-col">
+            <button
+              onClick={() => switchImagery('esri')}
+              className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
+                imagerySource === 'esri' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+              }`}
+            >
+              Satellite
+            </button>
+            <button
+              onClick={() => switchImagery('osm')}
+              className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
+                imagerySource === 'osm' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+              }`}
+            >
+              Street Map
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Active Layer Badge */}
+      <div className="active-layer-badge">
+        <span className="pulse-dot" />
+        <span>{activeLayerName}</span>
+      </div>
+
+      {/* Property Status Legend */}
+      <div className="map-legend">
+        <h4>Property Status</h4>
+        <div className="legend-item">
+          <span className="legend-dot sale" />
+          <span>For Sale</span>
+        </div>
+        <div className="legend-item">
+          <span className="legend-dot lease" />
+          <span>For Lease</span>
+        </div>
+        <div className="legend-item">
+          <span className="legend-dot sold" />
+          <span>Sold (Comps)</span>
+        </div>
+      </div>
+
+      {/* Zoom indicator */}
+      <div className="absolute bottom-4 right-4 z-[1000] bg-white px-2 py-1 rounded shadow text-xs text-gray-600">
+        Zoom: {currentZoom} {currentZoom < MIN_PARCEL_ZOOM && '(zoom in to see parcels)'}
+      </div>
+    </div>
+  )
+}

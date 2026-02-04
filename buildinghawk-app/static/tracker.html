@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Industrial Tracker | BuildingHawk</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        .new-badge { background: #C6EFCE; color: #006100; }
+        .reduced-badge { background: #FCE4D6; color: #9C5700; }
+        .sold-badge { background: #D9D9D9; color: #666; text-decoration: line-through; }
+        .loading { opacity: 0.5; pointer-events: none; }
+        .stat-card { transition: all 0.2s; }
+        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <!-- Header -->
+    <header class="bg-blue-900 text-white shadow-lg">
+        <div class="max-w-7xl mx-auto px-4 py-4">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-2xl font-bold">🏭 Industrial Tracker</h1>
+                    <p class="text-blue-200 text-sm">Orange County Daily Listings</p>
+                </div>
+                <div class="text-right">
+                    <p class="text-sm" id="lastUpdated">Loading...</p>
+                    <a href="/" class="text-blue-200 hover:text-white text-sm">← Back to CRM</a>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto px-4 py-6">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6" id="statsCards">
+            <div class="stat-card bg-white rounded-lg p-4 shadow">
+                <p class="text-gray-500 text-xs uppercase">For Lease</p>
+                <p class="text-2xl font-bold text-blue-600" id="statLease">-</p>
+            </div>
+            <div class="stat-card bg-white rounded-lg p-4 shadow">
+                <p class="text-gray-500 text-xs uppercase">For Sale</p>
+                <p class="text-2xl font-bold text-green-600" id="statSale">-</p>
+            </div>
+            <div class="stat-card bg-white rounded-lg p-4 shadow">
+                <p class="text-gray-500 text-xs uppercase">New Today</p>
+                <p class="text-2xl font-bold text-emerald-600" id="statNew">-</p>
+            </div>
+            <div class="stat-card bg-white rounded-lg p-4 shadow">
+                <p class="text-gray-500 text-xs uppercase">Price Reduced</p>
+                <p class="text-2xl font-bold text-orange-600" id="statReduced">-</p>
+            </div>
+            <div class="stat-card bg-white rounded-lg p-4 shadow">
+                <p class="text-gray-500 text-xs uppercase">Total SF</p>
+                <p class="text-2xl font-bold text-purple-600" id="statSF">-</p>
+            </div>
+            <div class="stat-card bg-white rounded-lg p-4 shadow">
+                <p class="text-gray-500 text-xs uppercase">Cities</p>
+                <p class="text-2xl font-bold text-gray-600" id="statCities">-</p>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="bg-white rounded-lg shadow p-4 mb-6">
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Type</label>
+                    <select id="filterType" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">All Types</option>
+                        <option value="lease">For Lease</option>
+                        <option value="sale">For Sale</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">City</label>
+                    <select id="filterCity" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">All Cities</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Min SF</label>
+                    <input type="number" id="filterMinSF" placeholder="4,000" class="w-full border rounded px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Max SF</label>
+                    <input type="number" id="filterMaxSF" placeholder="100,000" class="w-full border rounded px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">Search</label>
+                    <input type="text" id="filterSearch" placeholder="Address, notes..." class="w-full border rounded px-3 py-2 text-sm">
+                </div>
+            </div>
+            <div class="flex gap-2 mt-3">
+                <button onclick="applyFilters()" class="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
+                    Apply Filters
+                </button>
+                <button onclick="clearFilters()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded text-sm hover:bg-gray-300">
+                    Clear
+                </button>
+                <button onclick="showNewOnly()" class="bg-green-100 text-green-700 px-4 py-2 rounded text-sm hover:bg-green-200">
+                    🆕 New Only
+                </button>
+                <button onclick="showReducedOnly()" class="bg-orange-100 text-orange-700 px-4 py-2 rounded text-sm hover:bg-orange-200">
+                    📉 Price Reduced
+                </button>
+            </div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="flex gap-2 mb-4">
+            <button onclick="switchTab('lease')" id="tabLease" class="px-4 py-2 rounded-t bg-blue-600 text-white font-medium">
+                For Lease
+            </button>
+            <button onclick="switchTab('sale')" id="tabSale" class="px-4 py-2 rounded-t bg-gray-200 text-gray-700 font-medium">
+                For Sale
+            </button>
+        </div>
+
+        <!-- Listings Table -->
+        <div class="bg-white rounded-lg shadow overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm" id="listingsTable">
+                    <thead class="bg-gray-50 text-gray-600">
+                        <tr id="tableHeader">
+                            <!-- Dynamic headers -->
+                        </tr>
+                    </thead>
+                    <tbody id="listingsBody" class="divide-y">
+                        <tr><td colspan="7" class="text-center py-8 text-gray-400">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <!-- Pagination -->
+            <div class="flex justify-between items-center px-4 py-3 bg-gray-50 border-t">
+                <p class="text-sm text-gray-500" id="paginationInfo">Showing 0 of 0</p>
+                <div class="flex gap-2">
+                    <button onclick="prevPage()" id="btnPrev" class="px-3 py-1 border rounded text-sm disabled:opacity-50">Previous</button>
+                    <button onclick="nextPage()" id="btnNext" class="px-3 py-1 border rounded text-sm disabled:opacity-50">Next</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const API_BASE = '/api';
+        let currentTab = 'lease';
+        let currentPage = 1;
+        let totalPages = 1;
+        let cities = [];
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadListings();
+        });
+
+        async function loadStats() {
+            try {
+                const res = await fetch(`${API_BASE}/listings/stats`);
+                const data = await res.json();
+                
+                document.getElementById('statLease').textContent = data.by_type.lease || 0;
+                document.getElementById('statSale').textContent = data.by_type.sale || 0;
+                document.getElementById('statNew').textContent = data.new_today || 0;
+                document.getElementById('statReduced').textContent = data.price_reduced || 0;
+                document.getElementById('statSF').textContent = formatNumber(data.total_sf);
+                document.getElementById('statCities').textContent = Object.keys(data.by_city || {}).length;
+                
+                // Populate city filter
+                cities = Object.keys(data.by_city || {}).sort();
+                const citySelect = document.getElementById('filterCity');
+                citySelect.innerHTML = '<option value="">All Cities</option>' + 
+                    cities.map(c => `<option value="${c}">${c}</option>`).join('');
+                
+                document.getElementById('lastUpdated').textContent = `Updated: ${new Date().toLocaleDateString()}`;
+            } catch (err) {
+                console.error('Error loading stats:', err);
+            }
+        }
+
+        async function loadListings() {
+            const params = new URLSearchParams({
+                type: document.getElementById('filterType').value || currentTab,
+                city: document.getElementById('filterCity').value,
+                min_sf: document.getElementById('filterMinSF').value,
+                max_sf: document.getElementById('filterMaxSF').value,
+                search: document.getElementById('filterSearch').value,
+                page: currentPage,
+                limit: 50
+            });
+
+            document.getElementById('listingsBody').classList.add('loading');
+            
+            try {
+                const res = await fetch(`${API_BASE}/listings?${params}`);
+                const data = await res.json();
+                
+                totalPages = data.pages;
+                renderTable(data.listings, currentTab);
+                updatePagination(data);
+            } catch (err) {
+                console.error('Error loading listings:', err);
+                document.getElementById('listingsBody').innerHTML = 
+                    '<tr><td colspan="7" class="text-center py-8 text-red-500">Error loading data</td></tr>';
+            }
+            
+            document.getElementById('listingsBody').classList.remove('loading');
+        }
+
+        function renderTable(listings, type) {
+            const header = document.getElementById('tableHeader');
+            const body = document.getElementById('listingsBody');
+            
+            if (type === 'lease') {
+                header.innerHTML = `
+                    <th class="px-4 py-3 text-left">Address</th>
+                    <th class="px-4 py-3 text-left">City</th>
+                    <th class="px-4 py-3 text-right">SF</th>
+                    <th class="px-4 py-3 text-right">Rate PSF/Mo</th>
+                    <th class="px-4 py-3 text-left">Notes</th>
+                    <th class="px-4 py-3 text-left">Source</th>
+                    <th class="px-4 py-3 text-center">Status</th>
+                `;
+                
+                body.innerHTML = listings.map(l => `
+                    <tr class="hover:bg-gray-50 ${l.status === 'leased' ? 'opacity-50' : ''}">
+                        <td class="px-4 py-3 font-medium">${l.address}</td>
+                        <td class="px-4 py-3">${l.city}</td>
+                        <td class="px-4 py-3 text-right">${formatNumber(l.sf)}</td>
+                        <td class="px-4 py-3 text-right font-medium">${l.rate_monthly ? '$' + l.rate_monthly.toFixed(2) : l.rate_display || 'TBD'}</td>
+                        <td class="px-4 py-3 text-gray-500 text-xs">${l.notes || ''}</td>
+                        <td class="px-4 py-3 text-xs">${(l.sources || []).join(', ')}</td>
+                        <td class="px-4 py-3 text-center">${getStatusBadge(l)}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="7" class="text-center py-8 text-gray-400">No listings found</td></tr>';
+            } else {
+                header.innerHTML = `
+                    <th class="px-4 py-3 text-left">Address</th>
+                    <th class="px-4 py-3 text-left">City</th>
+                    <th class="px-4 py-3 text-right">SF</th>
+                    <th class="px-4 py-3 text-right">Price</th>
+                    <th class="px-4 py-3 text-right">$/SF</th>
+                    <th class="px-4 py-3 text-left">Source</th>
+                    <th class="px-4 py-3 text-center">Status</th>
+                `;
+                
+                body.innerHTML = listings.map(l => `
+                    <tr class="hover:bg-gray-50 ${l.status === 'sold' ? 'opacity-50' : ''}">
+                        <td class="px-4 py-3 font-medium">${l.address}</td>
+                        <td class="px-4 py-3">${l.city}</td>
+                        <td class="px-4 py-3 text-right">${l.sf_display || formatNumber(l.sf)}</td>
+                        <td class="px-4 py-3 text-right font-medium">${l.sale_price ? '$' + formatNumber(l.sale_price) : 'TBD'}</td>
+                        <td class="px-4 py-3 text-right">${l.price_psf ? '$' + l.price_psf.toFixed(0) : '—'}</td>
+                        <td class="px-4 py-3 text-xs">${(l.sources || []).join(', ')}</td>
+                        <td class="px-4 py-3 text-center">${getStatusBadge(l)}</td>
+                    </tr>
+                `).join('') || '<tr><td colspan="7" class="text-center py-8 text-gray-400">No listings found</td></tr>';
+            }
+        }
+
+        function getStatusBadge(listing) {
+            if (listing.status === 'sold') return '<span class="sold-badge px-2 py-1 rounded text-xs">SOLD</span>';
+            if (listing.status === 'leased') return '<span class="sold-badge px-2 py-1 rounded text-xs">LEASED</span>';
+            if (listing.is_new) return '<span class="new-badge px-2 py-1 rounded text-xs">🆕 NEW</span>';
+            if (listing.is_price_reduced) return '<span class="reduced-badge px-2 py-1 rounded text-xs">📉 REDUCED</span>';
+            return '<span class="bg-gray-100 px-2 py-1 rounded text-xs">Active</span>';
+        }
+
+        function formatNumber(n) {
+            if (!n) return '—';
+            return n.toLocaleString();
+        }
+
+        function updatePagination(data) {
+            document.getElementById('paginationInfo').textContent = 
+                `Showing page ${data.page} of ${data.pages} (${data.total} total)`;
+            document.getElementById('btnPrev').disabled = currentPage <= 1;
+            document.getElementById('btnNext').disabled = currentPage >= totalPages;
+        }
+
+        function switchTab(tab) {
+            currentTab = tab;
+            currentPage = 1;
+            document.getElementById('filterType').value = tab;
+            
+            document.getElementById('tabLease').className = tab === 'lease' 
+                ? 'px-4 py-2 rounded-t bg-blue-600 text-white font-medium'
+                : 'px-4 py-2 rounded-t bg-gray-200 text-gray-700 font-medium';
+            document.getElementById('tabSale').className = tab === 'sale'
+                ? 'px-4 py-2 rounded-t bg-green-600 text-white font-medium'
+                : 'px-4 py-2 rounded-t bg-gray-200 text-gray-700 font-medium';
+            
+            loadListings();
+        }
+
+        function applyFilters() {
+            currentPage = 1;
+            loadListings();
+        }
+
+        function clearFilters() {
+            document.getElementById('filterType').value = currentTab;
+            document.getElementById('filterCity').value = '';
+            document.getElementById('filterMinSF').value = '';
+            document.getElementById('filterMaxSF').value = '';
+            document.getElementById('filterSearch').value = '';
+            currentPage = 1;
+            loadListings();
+        }
+
+        async function showNewOnly() {
+            const res = await fetch(`${API_BASE}/listings/new`);
+            const data = await res.json();
+            renderTable(data.listings, currentTab);
+            document.getElementById('paginationInfo').textContent = `Showing ${data.total} new listings`;
+        }
+
+        async function showReducedOnly() {
+            const res = await fetch(`${API_BASE}/listings/reduced`);
+            const data = await res.json();
+            renderTable(data.listings, currentTab);
+            document.getElementById('paginationInfo').textContent = `Showing ${data.total} price-reduced listings`;
+        }
+
+        function prevPage() {
+            if (currentPage > 1) {
+                currentPage--;
+                loadListings();
+            }
+        }
+
+        function nextPage() {
+            if (currentPage < totalPages) {
+                currentPage++;
+                loadListings();
+            }
+        }
+    </script>
+</body>
+</html>

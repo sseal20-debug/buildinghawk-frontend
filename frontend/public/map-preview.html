@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Building Hawk - Property Map Preview</title>
+    <script src="https://maps.googleapis.com/maps/api/js?key=&libraries=marker"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, -apple-system, sans-serif; background: #1a1a2e; color: white; }
+        
+        #header {
+            background: linear-gradient(135deg, #16213e 0%, #1a1a2e 100%);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #333;
+        }
+        
+        .logo { display: flex; align-items: center; gap: 1rem; }
+        .logo img { height: 50px; }
+        .logo h1 { font-size: 1.5rem; color: #f59e0b; }
+        .logo p { font-size: 0.875rem; color: #9ca3af; }
+        
+        #stats {
+            display: flex;
+            gap: 2rem;
+            font-size: 0.875rem;
+        }
+        
+        .stat { text-align: center; }
+        .stat-value { font-size: 1.5rem; font-weight: bold; color: #f59e0b; }
+        .stat-label { color: #9ca3af; }
+        
+        #controls {
+            position: absolute;
+            top: 100px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(26, 26, 46, 0.95);
+            padding: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            width: 280px;
+        }
+        
+        #controls input, #controls select {
+            width: 100%;
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #252545;
+            color: white;
+            font-size: 0.875rem;
+        }
+        
+        #controls input:focus, #controls select:focus {
+            outline: none;
+            border-color: #f59e0b;
+        }
+        
+        #controls button {
+            width: 100%;
+            padding: 0.75rem;
+            background: #f59e0b;
+            color: #1a1a2e;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        
+        #controls button:hover { background: #d97706; }
+        
+        #filter-count {
+            text-align: center;
+            color: #9ca3af;
+            font-size: 0.75rem;
+            margin-top: 0.5rem;
+        }
+        
+        #map { width: 100%; height: calc(100vh - 80px); }
+        
+        #legend {
+            position: absolute;
+            bottom: 30px;
+            left: 20px;
+            z-index: 1000;
+            background: rgba(26, 26, 46, 0.95);
+            padding: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        
+        #legend h4 { color: #9ca3af; font-size: 0.75rem; margin-bottom: 0.5rem; }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.75rem;
+            margin: 0.25rem 0;
+        }
+        
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            border: 2px solid white;
+        }
+        
+        #property-panel {
+            position: absolute;
+            top: 100px;
+            right: 20px;
+            z-index: 1000;
+            background: rgba(26, 26, 46, 0.95);
+            padding: 1.5rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+            width: 320px;
+            display: none;
+        }
+        
+        #property-panel.active { display: block; }
+        
+        #property-panel h3 {
+            font-size: 1rem;
+            margin-bottom: 0.5rem;
+            color: #f59e0b;
+        }
+        
+        #property-panel .address { color: #9ca3af; margin-bottom: 1rem; }
+        
+        #property-panel .detail {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #333;
+            font-size: 0.875rem;
+        }
+        
+        #property-panel .label { color: #9ca3af; }
+        #property-panel .value { color: white; font-weight: 500; }
+        
+        #property-panel .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: none;
+            border: none;
+            color: #9ca3af;
+            cursor: pointer;
+            font-size: 1.25rem;
+        }
+        
+        #loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            z-index: 2000;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid #333;
+            border-top-color: #f59e0b;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        
+        @keyframes spin { to { transform: rotate(360deg); } }
+        
+        #error {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            background: #1a1a2e;
+            padding: 2rem;
+            border-radius: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <header id="header">
+        <div class="logo">
+            <img src="assets/logos/BUILDINGHAWKINC1f.png" alt="Building Hawk" onerror="this.style.display='none'">
+            <div>
+                <h1>Building Hawk</h1>
+                <p>Industrial Real Estate CRM</p>
+            </div>
+        </div>
+        <div id="stats">
+            <div class="stat">
+                <div class="stat-value" id="total-count">-</div>
+                <div class="stat-label">Properties</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="geo-count">-</div>
+                <div class="stat-label">On Map</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" id="city-count">-</div>
+                <div class="stat-label">Cities</div>
+            </div>
+        </div>
+    </header>
+    
+    <div id="map"></div>
+    
+    <div id="controls">
+        <input type="text" id="search" placeholder="🔍 Search address, company...">
+        <select id="city-filter">
+            <option value="">All Cities</option>
+        </select>
+        <select id="type-filter">
+            <option value="">All Types</option>
+        </select>
+        <button onclick="clearFilters()">Clear Filters</button>
+        <div id="filter-count">Showing all properties</div>
+    </div>
+    
+    <div id="legend">
+        <h4>PROPERTY TYPES</h4>
+        <div class="legend-item"><div class="legend-dot" style="background:#f59e0b"></div> Industrial</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#3b82f6"></div> Commercial</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div> Inventory</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#06b6d4"></div> Parcel</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ec4899"></div> Tenant</div>
+    </div>
+    
+    <div id="property-panel">
+        <button class="close-btn" onclick="closePanel()">×</button>
+        <h3 id="panel-address">-</h3>
+        <div class="address" id="panel-location">-</div>
+        <div class="detail"><span class="label">Company</span><span class="value" id="panel-company">-</span></div>
+        <div class="detail"><span class="label">Contact</span><span class="value" id="panel-contact">-</span></div>
+        <div class="detail"><span class="label">Phone</span><span class="value" id="panel-phone">-</span></div>
+        <div class="detail"><span class="label">Size</span><span class="value" id="panel-sqft">-</span></div>
+        <div class="detail"><span class="label">Owner</span><span class="value" id="panel-owner">-</span></div>
+        <div class="detail"><span class="label">Type</span><span class="value" id="panel-type">-</span></div>
+    </div>
+    
+    <div id="loading">
+        <div class="spinner"></div>
+        <p>Loading properties...</p>
+    </div>
+    
+    <div id="error">
+        <h2>⚠️ Data Not Found</h2>
+        <p>Please run the data consolidation scripts first.</p>
+    </div>
+
+    <script>
+        // Configuration
+        const COLORS = {
+            INDUSTRIAL: '#f59e0b',
+            COMMERCIAL: '#3b82f6',
+            RESIDENTIAL: '#10b981',
+            PUBLIC: '#8b5cf6',
+            inventory: '#f97316',
+            parcel: '#06b6d4',
+            tenant: '#ec4899',
+            default: '#6b7280'
+        };
+        
+        const OC_CENTER = { lat: 33.7879, lng: -117.8531 };
+        
+        let map;
+        let markers = [];
+        let allFeatures = [];
+        let infoWindow;
+        
+        // Initialize
+        async function init() {
+            // Load data
+            try {
+                const response = await fetch('data/building_hawk_geo.geojson');
+                if (!response.ok) throw new Error('Data not found');
+                const data = await response.json();
+                allFeatures = data.features;
+                
+                document.getElementById('loading').style.display = 'none';
+                
+                // Update stats
+                updateStats(allFeatures);
+                
+                // Populate filters
+                populateFilters(allFeatures);
+                
+                // Initialize map
+                initMap();
+                
+                // Add markers
+                updateMarkers(allFeatures);
+                
+            } catch (error) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                console.error('Failed to load data:', error);
+            }
+        }
+        
+        function initMap() {
+            map = new google.maps.Map(document.getElementById('map'), {
+                center: OC_CENTER,
+                zoom: 11,
+                mapTypeId: 'hybrid',
+                mapTypeControl: true,
+                mapTypeControlOptions: {
+                    position: google.maps.ControlPosition.TOP_RIGHT
+                },
+                fullscreenControl: true,
+                streetViewControl: false
+            });
+            
+            infoWindow = new google.maps.InfoWindow();
+        }
+        
+        function updateStats(features) {
+            document.getElementById('total-count').textContent = features.length.toLocaleString();
+            document.getElementById('geo-count').textContent = features.length.toLocaleString();
+            
+            const cities = new Set(features.map(f => f.properties.city).filter(Boolean));
+            document.getElementById('city-count').textContent = cities.size;
+        }
+        
+        function populateFilters(features) {
+            const cities = [...new Set(features.map(f => f.properties.city).filter(Boolean))].sort();
+            const types = [...new Set(features.map(f => f.properties.landuse_category || f.properties.source_type).filter(Boolean))].sort();
+            
+            const citySelect = document.getElementById('city-filter');
+            cities.forEach(city => {
+                const option = document.createElement('option');
+                option.value = city;
+                option.textContent = city;
+                citySelect.appendChild(option);
+            });
+            
+            const typeSelect = document.getElementById('type-filter');
+            types.forEach(type => {
+                const option = document.createElement('option');
+                option.value = type;
+                option.textContent = type;
+                typeSelect.appendChild(option);
+            });
+            
+            // Add event listeners
+            document.getElementById('search').addEventListener('input', filterMarkers);
+            document.getElementById('city-filter').addEventListener('change', filterMarkers);
+            document.getElementById('type-filter').addEventListener('change', filterMarkers);
+        }
+        
+        function filterMarkers() {
+            const search = document.getElementById('search').value.toLowerCase();
+            const city = document.getElementById('city-filter').value;
+            const type = document.getElementById('type-filter').value;
+            
+            const filtered = allFeatures.filter(f => {
+                const props = f.properties;
+                
+                if (city && props.city !== city) return false;
+                if (type && props.landuse_category !== type && props.source_type !== type) return false;
+                
+                if (search) {
+                    const searchFields = [props.address, props.company, props.contact_name, props.owner_name]
+                        .filter(Boolean).join(' ').toLowerCase();
+                    if (!searchFields.includes(search)) return false;
+                }
+                
+                return true;
+            });
+            
+            updateMarkers(filtered);
+            
+            const countText = filtered.length === allFeatures.length 
+                ? 'Showing all properties'
+                : `Showing ${filtered.length.toLocaleString()} of ${allFeatures.length.toLocaleString()}`;
+            document.getElementById('filter-count').textContent = countText;
+        }
+        
+        function updateMarkers(features) {
+            // Clear existing markers
+            markers.forEach(m => m.setMap(null));
+            markers = [];
+            
+            const bounds = new google.maps.LatLngBounds();
+            
+            features.forEach(feature => {
+                const [lng, lat] = feature.geometry.coordinates;
+                const props = feature.properties;
+                const position = { lat, lng };
+                
+                bounds.extend(position);
+                
+                const color = COLORS[props.landuse_category] || COLORS[props.source_type] || COLORS.default;
+                
+                const marker = new google.maps.Marker({
+                    position,
+                    map,
+                    icon: {
+                        path: google.maps.SymbolPath.CIRCLE,
+                        fillColor: color,
+                        fillOpacity: 0.9,
+                        strokeColor: 'white',
+                        strokeWeight: 2,
+                        scale: 8
+                    },
+                    title: props.address
+                });
+                
+                marker.addListener('click', () => showPropertyPanel(props));
+                
+                markers.push(marker);
+            });
+            
+            if (markers.length > 0) {
+                map.fitBounds(bounds, { padding: 50 });
+            }
+        }
+        
+        function showPropertyPanel(props) {
+            document.getElementById('panel-address').textContent = props.address || '-';
+            document.getElementById('panel-location').textContent = 
+                `${props.city || ''}, ${props.state || 'CA'} ${props.zip || ''}`;
+            document.getElementById('panel-company').textContent = props.company || '-';
+            document.getElementById('panel-contact').textContent = props.contact_name || '-';
+            document.getElementById('panel-phone').textContent = props.phone || '-';
+            document.getElementById('panel-sqft').textContent = props.sqft ? props.sqft.toLocaleString() + ' SF' : '-';
+            document.getElementById('panel-owner').textContent = props.owner_name || '-';
+            document.getElementById('panel-type').textContent = props.landuse_desc || props.landuse_category || props.source_type || '-';
+            
+            document.getElementById('property-panel').classList.add('active');
+        }
+        
+        function closePanel() {
+            document.getElementById('property-panel').classList.remove('active');
+        }
+        
+        function clearFilters() {
+            document.getElementById('search').value = '';
+            document.getElementById('city-filter').value = '';
+            document.getElementById('type-filter').value = '';
+            filterMarkers();
+        }
+        
+        // Initialize on load
+        window.onload = init;
+    </script>
+</body>
+</html>
