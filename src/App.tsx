@@ -9,9 +9,10 @@ import { AlertsList } from "./components/Alerts/AlertsList"
 import { SaleAlertsList } from "./components/Alerts/SaleAlertsList"
 import ParcelExplorer from "./components/ParcelExplorerClean"
 import { ParcelClassifier } from "./components/ParcelClassifier"
-import { LayerSidebar, RightSearchPanel } from "./components/Sidebar"
+import { LayerSidebar } from "./components/Sidebar"
 import type { LayerKey } from "./components/Sidebar"
-import type { QuickFilter, PropertyResult } from "./components/Sidebar/RightSearchPanel"
+import { TopSearchBar } from "./components/Search/TopSearchBar"
+import type { QuickFilter } from "./components/Search/TopSearchBar"
 import L from 'leaflet'
 import { DocumentDrawer } from "./components/DocumentDrawer"
 import { CompsSearch } from "./components/Comps"
@@ -584,6 +585,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
 
   // Sidebar state
   const [activeLayer, setActiveLayer] = useState<LayerKey>('listings')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -896,48 +898,19 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     setPanelView("none")
   }, [])
 
-  // Handle right-panel property click - fly to location
-  const handleRightPanelPropertyClick = useCallback((property: PropertyResult) => {
-    if (property.lat && property.lng) {
-      setMapCenter({ lat: property.lat, lng: property.lng })
-      setSelectedSearchLocation({ lat: property.lat, lng: property.lng })
-    }
+  // Handle top search bar result - fly to location
+  const handleTopSearchSelect = useCallback((result: { lat: number; lng: number; address: string }) => {
+    setMapCenter({ lat: result.lat, lng: result.lng })
+    setSelectedSearchLocation({ lat: result.lat, lng: result.lng })
   }, [])
-
-  // Build properties list for right panel from CRM data
-  const rightPanelProperties: PropertyResult[] = (propertiesData || [])
-    .filter((p: any) => {
-      // Quick filter
-      if (quickFilter === 'sale' && !p.for_sale) return false
-      if (quickFilter === 'lease' && !p.for_lease) return false
-      if (quickFilter === 'sold' && !p.is_sold) return false
-      // Search filter
-      if (searchQuery) {
-        const searchLower = searchQuery.toLowerCase()
-        const searchFields = [p.address, p.city, p.owner_name].filter(Boolean).join(' ').toLowerCase()
-        if (!searchFields.includes(searchLower)) return false
-      }
-      return true
-    })
-    .slice(0, 50)
-    .map((p: any) => ({
-      id: String(p.id || ''),
-      address: p.address || p.full_address || 'Unknown',
-      city: p.city || '',
-      status: (p.for_sale ? 'sale' : p.for_lease ? 'lease' : p.is_sold ? 'sold' : 'none') as 'sale' | 'lease' | 'sold' | 'none',
-      building_sf: p.building_sf || p.sqft,
-      year_built: p.year_built,
-      price: p.sale_price || p.last_sale_price,
-      lease_rate: p.lease_rate,
-      lat: p.lat || p.latitude,
-      lng: p.lng || p.longitude,
-    }))
 
   return (
     <div className="h-full w-full flex relative" style={{ fontFamily: "'Inter', -apple-system, sans-serif" }}>
       {/* Left Sidebar - Layer Buttons */}
       <LayerSidebar
         activeLayer={activeLayer}
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
         onLayerChange={(layer) => {
           setActiveLayer(layer)
           // Enable properties/land automatically based on layer
@@ -988,6 +961,15 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           comps: 0,
           vacant: 0,
         }}
+      />
+
+      {/* Top Search Bar + Quick Filters */}
+      <TopSearchBar
+        onSelect={handleTopSearchSelect}
+        onSearchChange={setSearchQuery}
+        sidebarOpen={sidebarOpen}
+        activeFilter={quickFilter}
+        onFilterChange={setQuickFilter}
       />
 
       {/* Center - Map */}
@@ -1226,15 +1208,6 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         )}
       </div>
 
-      {/* Right Search Panel */}
-      <RightSearchPanel
-        properties={rightPanelProperties}
-        totalCount={propertiesData?.length || 0}
-        onPropertyClick={handleRightPanelPropertyClick}
-        onSearch={setSearchQuery}
-        onFilterChange={setQuickFilter}
-        activeFilter={quickFilter}
-      />
     </div>
   )
 }
