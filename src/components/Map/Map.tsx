@@ -159,6 +159,9 @@ export function Map({
   const selectedParcelsLayerRef = useRef<L.LayerGroup | null>(null)
   const drawnItemsRef = useRef<L.FeatureGroup | null>(null)
   const drawControlRef = useRef<L.Control.Draw | null>(null)
+  const shieldContainerRef = useRef<HTMLDivElement | null>(null)
+  // Store freeway polyline coords for viewport-clamped shield positioning
+  const freewayRoutesRef = useRef<Record<string, { coords: [number, number][][]; isInterstate: boolean }>>({})
 
   const [mapBounds, setMapBounds] = useState<{
     west: number
@@ -729,84 +732,136 @@ export function Map({
       }
     })
 
-    // Helper to add a shield marker at a specific position
-    const addShield = (routeNum: string, lat: number, lng: number, isInterstate: boolean) => {
-      const shieldHtml = isInterstate
-        ? `<div class="freeway-shield interstate">
-            <div class="shield-inner">${routeNum}</div>
-          </div>`
-        : `<div class="freeway-shield ca-state">
-            <div class="shield-inner">${routeNum}</div>
-          </div>`
+    // Store freeway route data for viewport-clamped shield positioning
+    // Shields are rendered as React DOM, not Leaflet markers — they stay visible at viewport edges
+    freewayRoutesRef.current = freewaySegments
 
-      const iconSize: [number, number] = isInterstate ? [48, 48] : [46, 52]
-      const iconAnchor: [number, number] = isInterstate ? [24, 24] : [23, 26]
+    console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments, freeway routes stored: ${Object.keys(freewaySegments).sort().join(', ')}`)
+  }, [roadGeometryData])
 
-      const icon = L.divIcon({
-        className: 'freeway-shield-container',
-        html: shieldHtml,
-        iconSize,
-        iconAnchor,
+  // Viewport-clamped freeway shields — repositioned on every map move
+  // Shields stick to the viewport edge when their freeway scrolls off-screen
+  // EXACTLY 2 shields per freeway route (user requirement)
+  interface ShieldPos { routeNum: string; x: number; y: number; isInterstate: boolean; name: string; clamped: boolean; idx: number }
+  const [shieldPositions, setShieldPositions] = useState<ShieldPos[]>([])
+
+  const updateShieldPositions = useCallback(() => {
+    const map = mapRef.current
+    const container = shieldContainerRef.current
+    const routes = freewayRoutesRef.current
+    if (!map || !container || !routes || Object.keys(routes).length === 0) return
+
+    const mapSize = map.getSize()
+    const W = mapSize.x
+    const H = mapSize.y
+    const MARGIN = 40 // Keep shields this far from edge
+    const shields: ShieldPos[] = []
+
+    Object.entries(routes).forEach(([routeNum, { coords: segments, isInterstate }]) => {
+      // Collect all container-space points for this freeway
+      const allScreenPts: { x: number; y: number }[] = []
+      const allGeoPts: { lat: number; lng: number }[] = []
+
+      segments.forEach(seg => {
+        seg.forEach(([lat, lng]) => {
+          allGeoPts.push({ lat, lng })
+          const pt = map.latLngToContainerPoint([lat, lng])
+          allScreenPts.push({ x: pt.x, y: pt.y })
+        })
       })
 
-      const marker = L.marker([lat, lng], {
-        icon,
-        interactive: true,
-        pane: 'roadNameLabelsPane',
-      })
       const name = FREEWAY_NAMES[routeNum] || `Route ${routeNum}`
-      marker.bindTooltip(name, {
-        permanent: true,
-        direction: 'top',
-        className: 'freeway-name-tooltip',
-        offset: [0, -8],
-      })
-      roadNameLabelsLayer.addLayer(marker)
-    }
 
-    // FIXED: Exactly 2 shields per freeway, manually placed for clean layout
-    // No auto-placement — manual positions ensure perfect placement on the orange overlay
-    const SHIELD_POSITIONS: { routeNum: string; lat: number; lng: number; isInterstate: boolean }[] = [
-      // I-5 (Santa Ana Freeway) — runs N-S through west side
-      { routeNum: '5', lat: 33.86, lng: -117.91, isInterstate: true },   // I-5 north (near La Mirada)
-      { routeNum: '5', lat: 33.74, lng: -117.87, isInterstate: true },   // I-5 south (near Santa Ana)
-      // I-405 (San Diego Freeway) — runs NW-SE through west side
-      { routeNum: '405', lat: 33.78, lng: -117.96, isInterstate: true }, // I-405 north (near Seal Beach)
-      { routeNum: '405', lat: 33.68, lng: -117.86, isInterstate: true }, // I-405 south (near Costa Mesa)
-      // SR-91 (Riverside Freeway) — runs E-W through middle
-      { routeNum: '91', lat: 33.88, lng: -117.98, isInterstate: false }, // 91 west (near Buena Park)
-      { routeNum: '91', lat: 33.88, lng: -117.72, isInterstate: false }, // 91 east (near Yorba Linda)
-      // SR-57 (Orange Freeway) — runs N-S through center
-      { routeNum: '57', lat: 33.93, lng: -117.89, isInterstate: false }, // 57 north (near Brea)
-      { routeNum: '57', lat: 33.82, lng: -117.87, isInterstate: false }, // 57 south (near Orange)
-      // SR-55 (Costa Mesa Freeway) — runs N-S center-south
-      { routeNum: '55', lat: 33.78, lng: -117.87, isInterstate: false }, // 55 north (near Santa Ana)
-      { routeNum: '55', lat: 33.68, lng: -117.87, isInterstate: false }, // 55 south (near Costa Mesa)
-      // SR-22 (Garden Grove Freeway) — runs E-W southern area
-      { routeNum: '22', lat: 33.82, lng: -117.98, isInterstate: false }, // 22 west (near Garden Grove)
-      { routeNum: '22', lat: 33.82, lng: -117.78, isInterstate: false }, // 22 east (near Orange)
-      // SR-241 (Foothill/Eastern Toll Road) — runs N-S far east
-      { routeNum: '241', lat: 33.83, lng: -117.67, isInterstate: false }, // 241 north
-      { routeNum: '241', lat: 33.74, lng: -117.65, isInterstate: false }, // 241 south
-      // SR-133 (Laguna Freeway) — short, runs N-S
-      { routeNum: '133', lat: 33.73, lng: -117.79, isInterstate: false }, // 133 north
-      { routeNum: '133', lat: 33.66, lng: -117.78, isInterstate: false }, // 133 south
-      // SR-73 (San Joaquin Hills Toll Road) — runs NW-SE far south
-      { routeNum: '73', lat: 33.64, lng: -117.81, isInterstate: false }, // 73 north
-      { routeNum: '73', lat: 33.58, lng: -117.73, isInterstate: false }, // 73 south
-      // SR-261 (Eastern Toll Road) — short connector
-      { routeNum: '261', lat: 33.78, lng: -117.72, isInterstate: false }, // 261 north
-      { routeNum: '261', lat: 33.73, lng: -117.72, isInterstate: false }, // 261 south
-    ]
+      // Filter to points inside viewport
+      const visiblePts = allScreenPts.filter(p => p.x >= -50 && p.x <= W + 50 && p.y >= -50 && p.y <= H + 50)
 
-    const routesWithShields = new Set<string>()
-    SHIELD_POSITIONS.forEach(({ routeNum, lat, lng, isInterstate }) => {
-      addShield(routeNum, lat, lng, isInterstate)
-      routesWithShields.add(routeNum)
+      if (visiblePts.length >= 2) {
+        // Freeway IS visible — place 2 shields at ~33% and ~66% along the visible extent
+        // Sort by combined x+y distance from top-left to get a rough ordering along the road
+        const sorted = [...visiblePts].sort((a, b) => {
+          const distA = Math.sqrt(a.x * a.x + a.y * a.y)
+          const distB = Math.sqrt(b.x * b.x + b.y * b.y)
+          return distA - distB
+        })
+
+        const i1 = Math.floor(sorted.length * 0.33)
+        const i2 = Math.floor(sorted.length * 0.67)
+        const p1 = sorted[i1]
+        const p2 = sorted[i2]
+
+        // Ensure minimum separation between 2 shields (at least 120px apart)
+        const dx = p2.x - p1.x
+        const dy = p2.y - p1.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+
+        if (dist >= 120) {
+          shields.push({
+            routeNum, isInterstate, name, clamped: false, idx: 0,
+            x: Math.max(MARGIN, Math.min(W - MARGIN, p1.x)),
+            y: Math.max(MARGIN, Math.min(H - MARGIN, p1.y)),
+          })
+          shields.push({
+            routeNum, isInterstate, name, clamped: false, idx: 1,
+            x: Math.max(MARGIN, Math.min(W - MARGIN, p2.x)),
+            y: Math.max(MARGIN, Math.min(H - MARGIN, p2.y)),
+          })
+        } else {
+          // Too close — just place one at midpoint
+          const mid = sorted[Math.floor(sorted.length / 2)]
+          shields.push({
+            routeNum, isInterstate, name, clamped: false, idx: 0,
+            x: Math.max(MARGIN, Math.min(W - MARGIN, mid.x)),
+            y: Math.max(MARGIN, Math.min(H - MARGIN, mid.y)),
+          })
+        }
+      } else if (visiblePts.length === 1) {
+        // Only one point visible — single shield, clamped to viewport
+        const p = visiblePts[0]
+        shields.push({
+          routeNum, isInterstate, name, clamped: false, idx: 0,
+          x: Math.max(MARGIN, Math.min(W - MARGIN, p.x)),
+          y: Math.max(MARGIN, Math.min(H - MARGIN, p.y)),
+        })
+      } else if (allGeoPts.length > 0) {
+        // Freeway is OFF-screen — clamp to nearest viewport edge
+        const centerPt = map.getCenter()
+        let closestPt = allGeoPts[0]
+        let closestDist = Infinity
+        allGeoPts.forEach(p => {
+          const d = Math.abs(p.lat - centerPt.lat) + Math.abs(p.lng - centerPt.lng)
+          if (d < closestDist) { closestDist = d; closestPt = p }
+        })
+        const containerPt = map.latLngToContainerPoint([closestPt.lat, closestPt.lng])
+        shields.push({
+          routeNum, isInterstate, name, clamped: true, idx: 0,
+          x: Math.max(MARGIN, Math.min(W - MARGIN, containerPt.x)),
+          y: Math.max(MARGIN, Math.min(H - MARGIN, containerPt.y)),
+        })
+      }
     })
 
-    console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments, shields on routes: ${[...routesWithShields].sort().join(', ')}`)
-  }, [roadGeometryData])
+    setShieldPositions(shields)
+  }, [])
+
+  // Hook into map move events to reposition shields
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    // Update immediately then on every move
+    const handler = () => updateShieldPositions()
+    map.on('move', handler)
+    map.on('zoom', handler)
+    map.on('moveend', handler)
+    // Initial position
+    updateShieldPositions()
+
+    return () => {
+      map.off('move', handler)
+      map.off('zoom', handler)
+      map.off('moveend', handler)
+    }
+  }, [updateShieldPositions, roadGeometryData])
 
   // Update parcels when data changes (but not on selection change)
   // Also hides bulk parcels when quickFilter is null
@@ -1707,6 +1762,34 @@ export function Map({
         className="w-full h-full"
         style={{ display: show3D ? 'block' : 'none' }}
       />
+
+      {/* Viewport-Clamped Freeway Shields — stay visible at edges when panning */}
+      <div
+        ref={shieldContainerRef}
+        className="absolute inset-0 pointer-events-none"
+        style={{ zIndex: 650 }}
+      >
+        {shieldPositions.map((s) => (
+          <div
+            key={`${s.routeNum}-${s.idx}`}
+            className="absolute pointer-events-none"
+            style={{
+              left: s.x,
+              top: s.y,
+              transform: 'translate(-50%, -50%)',
+              opacity: s.clamped ? 0.6 : 1,
+              transition: 'left 0.08s linear, top 0.08s linear',
+            }}
+          >
+            {/* Freeway name label above shield */}
+            <div className="freeway-name-label">{s.name}</div>
+            {/* Shield icon */}
+            <div className={`freeway-shield ${s.isInterstate ? 'interstate' : 'ca-state'}`}>
+              <div className="shield-inner">{s.routeNum}</div>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* Imagery Source Selector */}
       <div className="absolute top-20 right-4 z-[1000]">
