@@ -32,7 +32,7 @@ const TIME_PERIODS = [
   { label: '5 Years', value: '5y' },
 ]
 
-const CITIES = ['Anaheim', 'Orange', 'Fullerton', 'Brea', 'Placentia', 'La Habra', 'Yorba Linda']
+const _CITIES = ['Anaheim', 'Orange', 'Fullerton', 'Brea', 'Placentia', 'La Habra', 'Yorba Linda']
 
 export function StatsPanel({ onClose }: StatsPanelProps) {
   const [timePeriod, setTimePeriod] = useState('ytd')

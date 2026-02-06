@@ -131,8 +131,8 @@ export function CompsExport({ comps, compType, onClose }: CompsExportProps) {
           lines.push(`   Term: ${comp.lease_term_months ? `${comp.lease_term_months} months` : '-'}`)
           lines.push(`   Free Rent: ${comp.free_rent_months ? `${comp.free_rent_months} months` : '-'}`)
           lines.push(`   TIs: ${comp.ti_allowance_psf ? formatPsf(comp.ti_allowance_psf) : '-'}`)
-          lines.push(`   DH: ${comp.dock_doors || '-'} | GL: ${comp.gl_doors || '-'}`)
-          lines.push(`   Clear Height: ${comp.clear_height_ft ? `${comp.clear_height_ft}'` : '-'}`)
+          lines.push(`   DH: ${(comp as any).dock_doors || '-'} | GL: ${(comp as any).gl_doors || '-'}`)
+          lines.push(`   Clear Height: ${(comp as any).clear_height_ft ? `${(comp as any).clear_height_ft}'` : '-'}`)
         }
         if (options.includeTenant) lines.push(`   Tenant: ${comp.tenant_name || '-'}`)
         if (options.includeDate) lines.push(`   Lease Date: ${formatDate(comp.lease_date)}`)
@@ -672,8 +672,8 @@ export function CompsExport({ comps, compType, onClose }: CompsExportProps) {
   // Generate lease comp content matching Single Page Lease Comp Excel format
   const generateLeaseCompContent = (comp: LeaseComp): string => {
     // Calculate expiration if not set
-    const expirationDate = comp.lease_expiration || calculateExpiration(comp.lease_start || comp.lease_date, comp.lease_term_months)
-    const monthsRemaining = getMonthsRemaining(expirationDate)
+    const expirationDate = comp.lease_expiration || calculateExpiration(comp.lease_start || comp.lease_date || undefined, comp.lease_term_months)
+    const monthsRemaining = getMonthsRemaining(expirationDate || undefined)
     const yearsRemaining = monthsRemaining ? Math.floor(monthsRemaining / 12) : null
     const remainingDisplay = monthsRemaining !== null
       ? (yearsRemaining && yearsRemaining >= 1
@@ -783,15 +783,15 @@ export function CompsExport({ comps, compType, onClose }: CompsExportProps) {
                   </div>
                   <div class="info-row">
                     <span class="info-label">Clear Height:</span>
-                    <span class="info-value">${comp.clear_height_ft ? `${comp.clear_height_ft}'` : '-'}</span>
+                    <span class="info-value">${(comp as any).clear_height_ft ? `${(comp as any).clear_height_ft}'` : '-'}</span>
                   </div>
                   <div class="info-row">
                     <span class="info-label">Dock Doors:</span>
-                    <span class="info-value">${comp.dock_doors || '-'}</span>
+                    <span class="info-value">${(comp as any).dock_doors || '-'}</span>
                   </div>
                   <div class="info-row">
                     <span class="info-label">GL Doors:</span>
-                    <span class="info-value">${comp.gl_doors || '-'}</span>
+                    <span class="info-value">${(comp as any).gl_doors || '-'}</span>
                   </div>
                   <div class="info-row">
                     <span class="info-label">Building SF:</span>
@@ -863,7 +863,7 @@ export function CompsExport({ comps, compType, onClose }: CompsExportProps) {
                   </div>
                   <div class="data-item">
                     <div class="data-label">Clear Height</div>
-                    <div class="data-value">${comp.clear_height_ft ? `${comp.clear_height_ft}'` : '-'}</div>
+                    <div class="data-value">${(comp as any).clear_height_ft ? `${(comp as any).clear_height_ft}'` : '-'}</div>
                   </div>
                 </div>
 
@@ -899,7 +899,7 @@ export function CompsExport({ comps, compType, onClose }: CompsExportProps) {
                   </div>
                   <div class="sidebar-row">
                     <span class="sidebar-label">Occupancy:</span>
-                    <span class="sidebar-value">${comp.occupancy_pct ? `${comp.occupancy_pct}%` : '-'}</span>
+                    <span class="sidebar-value">${(comp as any).occupancy_pct ? `${(comp as any).occupancy_pct}%` : '-'}</span>
                   </div>
                 </div>
 
@@ -919,11 +919,11 @@ export function CompsExport({ comps, compType, onClose }: CompsExportProps) {
                   <div class="sidebar-title">Building Features</div>
                   <div class="sidebar-row">
                     <span class="sidebar-label">Dock High Doors:</span>
-                    <span class="sidebar-value">${comp.dock_doors || '-'}</span>
+                    <span class="sidebar-value">${(comp as any).dock_doors || '-'}</span>
                   </div>
                   <div class="sidebar-row">
                     <span class="sidebar-label">Grade Level Doors:</span>
-                    <span class="sidebar-value">${comp.gl_doors || '-'}</span>
+                    <span class="sidebar-value">${(comp as any).gl_doors || '-'}</span>
                   </div>
                   <div class="sidebar-row">
                     <span class="sidebar-label">Building Class:</span>

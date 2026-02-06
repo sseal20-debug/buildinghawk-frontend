@@ -3,19 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { parcelsApi } from '@/api/client'
 import L from 'leaflet'
 
-interface UnclassifiedParcel {
-  id: number
-  apn: string
-  lat: number
-  lng: number
-  address: string
-  city: string
-  sqft: number | null
-  acreage: number | null
-  owner_name: string
-  land_use: string
-}
-
 interface ParcelClassifierProps {
   isOpen: boolean
   onClose: () => void

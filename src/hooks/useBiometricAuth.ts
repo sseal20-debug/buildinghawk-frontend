@@ -16,10 +16,10 @@ interface UseBiometricAuthReturn {
 }
 
 // Generate a random challenge for authentication
-function generateChallenge(): Uint8Array {
+function generateChallenge(): BufferSource {
   const challenge = new Uint8Array(32);
   crypto.getRandomValues(challenge);
-  return challenge;
+  return challenge as unknown as BufferSource;
 }
 
 // Convert string to ArrayBuffer
@@ -54,7 +54,7 @@ export function useBiometricAuth(): UseBiometricAuthReturn {
           id: window.location.hostname,
         },
         user: {
-          id: new Uint8Array(userId),
+          id: new Uint8Array(userId) as unknown as BufferSource,
           name: email,
           displayName: email.split('@')[0],
         },
@@ -114,7 +114,7 @@ export function useBiometricAuth(): UseBiometricAuthReturn {
         rpId: window.location.hostname,
         userVerification: 'required',
         allowCredentials: storedCredentialId ? [{
-          id: Uint8Array.from(atob(storedCredentialId), c => c.charCodeAt(0)),
+          id: Uint8Array.from(atob(storedCredentialId), c => c.charCodeAt(0)) as unknown as BufferSource,
           type: 'public-key',
           transports: ['internal'],
         }] : [],

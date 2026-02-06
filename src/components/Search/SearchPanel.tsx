@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { searchApi } from '@/api/client'
 import type { SearchCriteria, PowerVolts } from '@/types'
 import { CitySelector } from './CitySelector'

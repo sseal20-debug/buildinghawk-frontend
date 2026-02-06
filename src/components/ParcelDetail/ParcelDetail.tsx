@@ -40,7 +40,7 @@ export function ParcelDetail({ apn, onUnitSelect, onAddUnit, onClose }: ParcelDe
     setEditValues({
       land_sf: parcel?.land_sf || 0,
       zoning: parcel?.zoning || '',
-      owner_name: parcel?.assessor_owner_name || parcel?.owner_name || '',
+      owner_name: parcel?.assessor_owner_name || '',
       tenant_name: '', // Will be populated from occupancy data when available
     })
     setIsEditing(true)
@@ -186,7 +186,7 @@ export function ParcelDetail({ apn, onUnitSelect, onAddUnit, onClose }: ParcelDe
             />
           ) : (
             <div className="text-sm font-medium text-gray-900 truncate">
-              {parcel.assessor_owner_name || parcel.owner_name || '—'}
+              {parcel.assessor_owner_name || '—'}
             </div>
           )}
         </div>

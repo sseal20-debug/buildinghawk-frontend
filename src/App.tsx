@@ -617,7 +617,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   // Query for CRM prospects when checkbox is checked
   const { data: prospectsData } = useQuery({
     queryKey: ["crm", "prospects", prospectFilter],
-    queryFn: () => crmApi.getProspects(prospectFilter),
+    queryFn: () => crmApi.getProspects(prospectFilter as any),
     enabled: showProspects,
   })
 

@@ -16,7 +16,7 @@ interface Property {
 }
 
 export default function MapPreviewPage() {
-  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  const [_selectedProperty, setSelectedProperty] = useState<Property | null>(null)
 
   return (
     <div className="min-h-screen bg-gray-900">

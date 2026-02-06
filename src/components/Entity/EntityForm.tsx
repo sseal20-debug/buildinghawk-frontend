@@ -94,17 +94,17 @@ export function EntityForm({ entityId, initialName, onBack, onSuccess }: EntityF
         const entity = await entitiesApi.update(entityId, {
           entity_name: data.entity_name,
           entity_type: data.entity_type,
-          website: data.website || null,
-          notes: data.notes || null,
+          website: data.website || undefined,
+          notes: data.notes || undefined,
         })
 
         // Handle contacts separately
         // For simplicity, we'll update/add contacts
         for (const contact of data.contacts) {
           if (contact.id) {
-            await entitiesApi.updateContact(entityId, contact.id, contact)
+            await entitiesApi.updateContact(entityId, contact.id, contact as any)
           } else {
-            await entitiesApi.addContact(entityId, contact)
+            await entitiesApi.addContact(entityId, contact as any)
           }
         }
 
@@ -120,7 +120,7 @@ export function EntityForm({ entityId, initialName, onBack, onSuccess }: EntityF
 
         // Add contacts
         for (const contact of data.contacts) {
-          await entitiesApi.addContact(entity.id, contact)
+          await entitiesApi.addContact(entity.id, contact as any)
         }
 
         return entity

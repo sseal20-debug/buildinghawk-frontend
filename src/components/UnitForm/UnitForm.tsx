@@ -82,10 +82,22 @@ export function UnitForm({ unitId, buildingId, onBack, onSuccess }: UnitFormProp
 
   const mutation = useMutation({
     mutationFn: (data: UnitFormData) => {
-      if (isEditing) {
-        return unitsApi.update(unitId, data)
+      const cleanData = {
+        ...data,
+        unit_sf: data.unit_sf ?? undefined,
+        warehouse_sf: data.warehouse_sf ?? undefined,
+        office_sf: data.office_sf ?? undefined,
+        clear_height_ft: data.clear_height_ft ?? undefined,
+        power_amps: data.power_amps ?? undefined,
+        yard_sf: data.yard_sf ?? undefined,
+        asking_sale_price: data.asking_sale_price ?? undefined,
+        asking_lease_rate: data.asking_lease_rate ?? undefined,
+        notes: data.notes ?? undefined,
       }
-      return unitsApi.create({ ...data, building_id: buildingId })
+      if (isEditing) {
+        return unitsApi.update(unitId, cleanData)
+      }
+      return unitsApi.create({ ...cleanData, building_id: buildingId })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unit'] })

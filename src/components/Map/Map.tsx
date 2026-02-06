@@ -180,7 +180,7 @@ export function Map({
   const [_isDrawing, setIsDrawing] = useState(false)
   // Multi-select: individually clicked parcels (always visible regardless of quick filter)
   const [selectedParcelApns, setSelectedParcelApns] = useState<Set<string>>(new Set())
-  const selectedParcelDataRef = useRef<Map<string, { feature: any; parcel: Parcel }>>(new Map())
+  const selectedParcelDataRef = useRef<globalThis.Map<string, { feature: any; parcel: Parcel }>>(new globalThis.Map())
   const [_classifyResult, setClassifyResult] = useState<{ count: number; classification: string } | null>(null)
   // 3D View state
   const [show3D, setShow3D] = useState(false)
@@ -1067,7 +1067,7 @@ export function Map({
     })
 
     // Bring selected parcels above bulk parcels
-    layer.bringToFront()
+    ;(layer as any).bringToFront?.()
   }, [selectedParcelApns])
 
   // Handle center prop changes
