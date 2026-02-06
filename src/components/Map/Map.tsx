@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { parcelsApi, roadsApi, type PropertyMarker, type ParcelUnit, type RoadGeometry, type CompanyLabel } from '@/api/client'
 import type { Parcel, ParcelFeature, CRMEntity } from '@/types'
@@ -160,6 +161,7 @@ export function Map({
   const drawnItemsRef = useRef<L.FeatureGroup | null>(null)
   const drawControlRef = useRef<L.Control.Draw | null>(null)
   const shieldContainerRef = useRef<HTMLDivElement | null>(null)
+  const [shieldPaneReady, setShieldPaneReady] = useState(false)
   // Store freeway polyline coords for viewport-clamped shield positioning
   const freewayRoutesRef = useRef<Record<string, { coords: [number, number][][]; isInterstate: boolean }>>({})
 
@@ -590,6 +592,19 @@ export function Map({
     map.createPane('roadNameLabelsPane')
     map.getPane('roadNameLabelsPane')!.style.zIndex = '640' // Just below labels (650), above everything else
     map.getPane('roadNameLabelsPane')!.style.pointerEvents = 'none'
+
+    // Create shield overlay container INSIDE the Leaflet container (same stacking context as map panes)
+    // Appended directly to .leaflet-container, NOT inside .leaflet-map-pane (avoids pan transform)
+    // z-index 645: above road overlays (420) and road name labels (640), below CartoDB labels (650)
+    const shieldOverlay = document.createElement('div')
+    shieldOverlay.style.position = 'absolute'
+    shieldOverlay.style.inset = '0'
+    shieldOverlay.style.zIndex = '645'
+    shieldOverlay.style.pointerEvents = 'none'
+    shieldOverlay.style.overflow = 'hidden'
+    map.getContainer().appendChild(shieldOverlay)
+    shieldContainerRef.current = shieldOverlay
+    setShieldPaneReady(true)
 
     const roadNameLabelsLayer = L.layerGroup()
     roadNameLabelsLayer.addTo(map)
@@ -1763,33 +1778,31 @@ export function Map({
         style={{ display: show3D ? 'block' : 'none' }}
       />
 
-      {/* Viewport-Clamped Freeway Shields — stay visible at edges when panning */}
-      <div
-        ref={shieldContainerRef}
-        className="absolute inset-0 pointer-events-none"
-        style={{ zIndex: 650 }}
-      >
-        {shieldPositions.map((s) => (
-          <div
-            key={`${s.routeNum}-${s.idx}`}
-            className="absolute pointer-events-none"
-            style={{
-              left: s.x,
-              top: s.y,
-              transform: 'translate(-50%, -50%)',
-              opacity: s.clamped ? 0.6 : 1,
-              transition: 'left 0.08s linear, top 0.08s linear',
-            }}
-          >
-            {/* Freeway name label above shield */}
-            <div className="freeway-name-label">{s.name}</div>
-            {/* Shield icon */}
-            <div className={`freeway-shield ${s.isInterstate ? 'interstate' : 'ca-state'}`}>
-              <div className="shield-inner">{s.routeNum}</div>
+      {/* Viewport-Clamped Freeway Shields — portaled into Leaflet container for correct z-stacking */}
+      {shieldPaneReady && shieldContainerRef.current && createPortal(
+        <>
+          {shieldPositions.map((s) => (
+            <div
+              key={`${s.routeNum}-${s.idx}`}
+              className="absolute pointer-events-none"
+              style={{
+                left: s.x,
+                top: s.y,
+                transform: 'translate(-50%, -50%)',
+                opacity: s.clamped ? 0.5 : 1,
+              }}
+            >
+              {/* Freeway name label above shield */}
+              <div className="freeway-name-label">{s.name}</div>
+              {/* Shield icon */}
+              <div className={`freeway-shield freeway-shield-sm ${s.isInterstate ? 'interstate' : 'ca-state'}`}>
+                <div className="shield-inner">{s.routeNum}</div>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </>,
+        shieldContainerRef.current
+      )}
 
       {/* Imagery Source Selector */}
       <div className="absolute top-20 right-4 z-[1000]">
