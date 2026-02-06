@@ -6,7 +6,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-draw'
 import 'leaflet-draw/dist/leaflet.draw.css'
-// leaflet.gridlayer.googlemutant available but not used — Google Maps API key needs Maps JS API enabled
+// leaflet.gridlayer.googlemutant loaded dynamically when user selects Google Satellite (HD)
 
 interface MapProps {
   onParcelSelect: (parcel: Parcel) => void
@@ -44,10 +44,10 @@ const OC_BOUNDS: L.LatLngBoundsExpression = [
 const NORTH_OC_CENTER: L.LatLngExpression = [33.84, -117.89]
 const DEFAULT_ZOOM = 13
 
-type ImagerySource = 'osm' | 'esri'
+type ImagerySource = 'osm' | 'esri' | 'google'
 
-// Tile layer URLs
-const TILE_LAYERS: Record<ImagerySource, { url: string; attribution: string }> = {
+// Tile layer URLs (Google uses GoogleMutant plugin, not standard tile URL)
+const TILE_LAYERS: Record<string, { url: string; attribution: string }> = {
   osm: {
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -165,7 +165,12 @@ export function Map({
   } | null>(null)
   const [localFileLoaded, setLocalFileLoaded] = useState(false)
   const [_localFeatureCount, setLocalFeatureCount] = useState(0)
-  const [imagerySource, setImagerySource] = useState<ImagerySource>('esri')
+  const [imagerySource, _setImagerySource] = useState<ImagerySource>('esri')
+  const imagerySourceRef = useRef<ImagerySource>('esri')
+  const setImagerySource = useCallback((source: ImagerySource) => {
+    imagerySourceRef.current = source
+    _setImagerySource(source)
+  }, [])
   const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM)
   const [drawMode, setDrawMode] = useState<'none' | 'land' | 'building'>('none')
   const [_isDrawing, setIsDrawing] = useState(false)
@@ -341,7 +346,7 @@ export function Map({
     }
   }, [])
 
-  // Switch imagery source
+  // Switch imagery source (supports Google Maps Satellite HD via dynamic import)
   const switchImagery = useCallback((source: ImagerySource) => {
     const map = mapRef.current
     if (!map) return
@@ -349,14 +354,56 @@ export function Map({
     // Remove existing tile layer
     if (tileLayerRef.current) {
       map.removeLayer(tileLayerRef.current)
+      tileLayerRef.current = null
     }
 
-    // Add new tile layer
-    const { url, attribution } = TILE_LAYERS[source]
+    // Google Maps Satellite (HD) — dynamic import with safety check
+    if (source === 'google') {
+      if (typeof window !== 'undefined' && (window as any).google?.maps) {
+        import('leaflet.gridlayer.googlemutant').then(() => {
+          // After import, the plugin adds googleMutant to L.gridLayer
+          const googleLayer = (L.gridLayer as any).googleMutant({
+            type: 'satellite',
+            maxZoom: 21,
+          })
+          googleLayer.addTo(map)
+          tileLayerRef.current = googleLayer
+
+          // Show labels on top of Google satellite
+          if (streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
+            if (!map.hasLayer(streetLabelsLayerRef.current)) {
+              streetLabelsLayerRef.current.addTo(map)
+            }
+            if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
+          }
+
+          setImagerySource('google')
+        }).catch((err) => {
+          console.warn('Failed to load GoogleMutant plugin, falling back to ESRI:', err)
+          // Fall back to ESRI
+          const { url, attribution } = TILE_LAYERS.esri
+          const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+          fallback.addTo(map)
+          tileLayerRef.current = fallback
+          setImagerySource('esri')
+        })
+      } else {
+        console.warn('Google Maps API not loaded yet, falling back to ESRI')
+        const { url, attribution } = TILE_LAYERS.esri
+        const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+        fallback.addTo(map)
+        tileLayerRef.current = fallback
+        setImagerySource('esri')
+      }
+      return
+    }
+
+    // ESRI or OSM tile layers
+    const { url, attribution } = TILE_LAYERS[source as 'osm' | 'esri']
     const newTileLayer = L.tileLayer(url, {
       attribution,
       maxZoom: 19,
-      detectRetina: source === 'esri', // retina rendering for ESRI
+      detectRetina: source === 'esri',
     })
     newTileLayer.addTo(map)
     tileLayerRef.current = newTileLayer
@@ -367,12 +414,10 @@ export function Map({
       if (!map.hasLayer(streetLabelsLayerRef.current)) {
         streetLabelsLayerRef.current.addTo(map)
       }
-      // Ensure parcel layer is on top of labels
       if (parcelLayerRef.current) {
         parcelLayerRef.current.bringToFront()
       }
     } else if (source === 'osm' && streetLabelsLayerRef.current) {
-      // Don't show labels overlay on OSM (it already has labels)
       if (map.hasLayer(streetLabelsLayerRef.current)) {
         map.removeLayer(streetLabelsLayerRef.current)
       }
@@ -403,15 +448,50 @@ export function Map({
     // Notify parent that map is ready
     onMapReady?.(map)
 
-    // Add default tile layer (ESRI aerial with retina for sharper imagery)
-    const { url, attribution } = TILE_LAYERS.esri
-    const tileLayer = L.tileLayer(url, {
-      attribution,
-      maxZoom: 19,
-      detectRetina: true,
-    })
-    tileLayer.addTo(map)
-    tileLayerRef.current = tileLayer
+    // Add default tile layer — try Google Maps Satellite (HD) first, fall back to ESRI
+    const tryGoogleDefault = () => {
+      if (typeof window !== 'undefined' && (window as any).google?.maps) {
+        import('leaflet.gridlayer.googlemutant').then(() => {
+          if (!mapRef.current) return
+          const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 21 })
+          googleLayer.addTo(mapRef.current)
+          tileLayerRef.current = googleLayer
+          setImagerySource('google')
+          console.log('Google Maps Satellite (HD) loaded as default')
+        }).catch(() => {
+          // Plugin failed — use ESRI
+          addEsriDefault()
+        })
+      } else {
+        // Google API not ready yet — start with ESRI, retry Google after delay
+        addEsriDefault()
+        setTimeout(() => {
+          if ((window as any).google?.maps && mapRef.current && imagerySourceRef.current === 'esri') {
+            // Google loaded now — switch silently
+            import('leaflet.gridlayer.googlemutant').then(() => {
+              if (!mapRef.current || !tileLayerRef.current) return
+              mapRef.current.removeLayer(tileLayerRef.current)
+              const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 21 })
+              googleLayer.addTo(mapRef.current)
+              tileLayerRef.current = googleLayer
+              setImagerySource('google')
+              console.log('Upgraded to Google Maps Satellite (HD)')
+            }).catch(() => { /* stay on ESRI */ })
+          }
+        }, 3000)
+      }
+    }
+
+    const addEsriDefault = () => {
+      if (!mapRef.current) return
+      const { url, attribution } = TILE_LAYERS.esri
+      const tileLayer = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+      tileLayer.addTo(mapRef.current)
+      tileLayerRef.current = tileLayer
+      setImagerySource('esri')
+    }
+
+    tryGoogleDefault()
 
     // Create custom pane for bright street labels (higher z-index)
     map.createPane('labelsPane')
@@ -1411,6 +1491,14 @@ export function Map({
             Map Style
           </div>
           <div className="flex flex-col">
+            <button
+              onClick={() => switchImagery('google')}
+              className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
+                imagerySource === 'google' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+              }`}
+            >
+              🛰️ Satellite (HD)
+            </button>
             <button
               onClick={() => switchImagery('esri')}
               className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
