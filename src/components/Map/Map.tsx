@@ -182,6 +182,10 @@ export function Map({
   const [selectedParcelApns, setSelectedParcelApns] = useState<Set<string>>(new Set())
   const selectedParcelDataRef = useRef<Map<string, { feature: any; parcel: Parcel }>>(new Map())
   const [_classifyResult, setClassifyResult] = useState<{ count: number; classification: string } | null>(null)
+  // 3D View state
+  const [show3D, setShow3D] = useState(false)
+  const map3dContainerRef = useRef<HTMLDivElement>(null)
+  const map3dElementRef = useRef<any>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
 
@@ -389,7 +393,7 @@ export function Map({
           console.warn('Failed to load GoogleMutant plugin, falling back to ESRI:', err)
           // Fall back to ESRI
           const { url, attribution } = TILE_LAYERS.esri
-          const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+          const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
           fallback.addTo(map)
           tileLayerRef.current = fallback
           setImagerySource('esri')
@@ -397,7 +401,7 @@ export function Map({
       } else {
         console.warn('Google Maps API not loaded yet, falling back to ESRI')
         const { url, attribution } = TILE_LAYERS.esri
-        const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+        const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
         fallback.addTo(map)
         tileLayerRef.current = fallback
         setImagerySource('esri')
@@ -407,10 +411,11 @@ export function Map({
 
     // ESRI or OSM tile layers
     const { url, attribution } = TILE_LAYERS[source as 'osm' | 'esri']
+    const isEsri = source === 'esri'
     const newTileLayer = L.tileLayer(url, {
       attribution,
-      maxZoom: 19,
-      detectRetina: source === 'esri',
+      ...(isEsri ? { maxNativeZoom: 19, maxZoom: 22 } : { maxZoom: 19 }),
+      detectRetina: isEsri,
     })
     newTileLayer.addTo(map)
     tileLayerRef.current = newTileLayer
@@ -437,10 +442,11 @@ export function Map({
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
 
-    // Create map with explicit handlers enabled
+    // Create map with explicit handlers enabled — allow zoom up to 22 for satellite overzoom
     const map = L.map(mapContainerRef.current, {
       center: NORTH_OC_CENTER,
       zoom: DEFAULT_ZOOM,
+      maxZoom: 22,
       maxBounds: OC_BOUNDS,
       maxBoundsViscosity: 0.5,
       zoomControl: true,
@@ -492,7 +498,7 @@ export function Map({
     const addEsriDefault = () => {
       if (!mapRef.current) return
       const { url, attribution } = TILE_LAYERS.esri
-      const tileLayer = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+      const tileLayer = L.tileLayer(url, { attribution, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
       tileLayer.addTo(mapRef.current)
       tileLayerRef.current = tileLayer
       setImagerySource('esri')
@@ -509,7 +515,8 @@ export function Map({
     // White text designed for dark/satellite backgrounds
     const streetLabelsLayer = L.tileLayer(CARTO_DARK_LABELS_URL, {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      maxZoom: 19,
+      maxNativeZoom: 18,
+      maxZoom: 22,
       opacity: 1,
       pane: 'labelsPane',
     })
@@ -1651,9 +1658,70 @@ export function Map({
     setClassifyResult(null)
   }, [])
 
+  // 3D View — create/destroy Google Maps 3D element when show3D toggles
+  useEffect(() => {
+    if (!show3D) {
+      // Destroy 3D element if exists
+      if (map3dElementRef.current && map3dContainerRef.current) {
+        map3dContainerRef.current.innerHTML = ''
+        map3dElementRef.current = null
+      }
+      return
+    }
+
+    const init3D = async () => {
+      if (!map3dContainerRef.current || !mapRef.current) return
+
+      // Get current map center and zoom
+      const center = mapRef.current.getCenter()
+      const zoom = mapRef.current.getZoom()
+
+      // Convert Leaflet zoom to Google Maps 3D range (meters above ground)
+      // Approximate: range = 591657550.5 / 2^zoom
+      const range = 591657550.5 / Math.pow(2, zoom)
+
+      try {
+        // Load Google Maps 3D library
+        const maps3d = await (window as any).google.maps.importLibrary('maps3d')
+        const { Map3DElement } = maps3d
+
+        // Create the 3D map element
+        const map3d = new Map3DElement({
+          center: { lat: center.lat, lng: center.lng, altitude: 0 },
+          range: Math.max(range, 200), // At least 200m
+          tilt: 55,
+          heading: 0,
+          mode: 'SATELLITE',
+        })
+
+        map3dContainerRef.current.innerHTML = ''
+        map3dContainerRef.current.appendChild(map3d)
+        map3dElementRef.current = map3d
+      } catch (err) {
+        console.error('Failed to initialize 3D view:', err)
+        setShow3D(false)
+      }
+    }
+
+    if ((window as any).google?.maps) {
+      init3D()
+    } else {
+      console.warn('Google Maps API not available for 3D view')
+      setShow3D(false)
+    }
+  }, [show3D])
+
   return (
     <div className="relative w-full h-full" style={{ pointerEvents: 'auto' }}>
-      <div ref={mapContainerRef} className="w-full h-full" style={{ pointerEvents: 'auto' }} />
+      {/* Leaflet 2D map — hidden when 3D is active */}
+      <div ref={mapContainerRef} className="w-full h-full" style={{ pointerEvents: 'auto', display: show3D ? 'none' : 'block' }} />
+
+      {/* Google Maps 3D container — shown when 3D is active */}
+      <div
+        ref={map3dContainerRef}
+        className="w-full h-full"
+        style={{ display: show3D ? 'block' : 'none' }}
+      />
 
       {/* Imagery Source Selector */}
       <div className="absolute top-20 right-4 z-[1000]">
@@ -1689,6 +1757,28 @@ export function Map({
           </div>
         </div>
       </div>
+
+      {/* 3D View toggle — show at zoom >= 19 */}
+      {currentZoom >= 19 && !show3D && (
+        <button
+          onClick={() => setShow3D(true)}
+          className="absolute top-56 right-4 z-[1000] px-3 py-2 bg-white rounded-lg shadow-lg text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-all"
+          title="Switch to 3D satellite view"
+        >
+          🏗️ 3D View
+        </button>
+      )}
+
+      {/* Back to 2D button — show when 3D is active */}
+      {show3D && (
+        <button
+          onClick={() => setShow3D(false)}
+          className="absolute top-4 left-4 z-[1000] px-4 py-2 bg-white rounded-lg shadow-lg text-sm font-bold text-gray-700 hover:bg-gray-100 transition-all flex items-center gap-2"
+        >
+          <span>←</span>
+          <span>Back to 2D</span>
+        </button>
+      )}
 
       {/* Active Layer Badge */}
       <div className="active-layer-badge">
