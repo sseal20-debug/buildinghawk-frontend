@@ -1,4 +1,7 @@
 // LayerSidebar - Left panel with 28 layer buttons (26 original + Condos + Stats)
+// Mobile-responsive: slides in as overlay on screens < 768px
+
+import { useEffect } from 'react'
 
 type LayerKey =
   | 'listings' | 'address' | 'specs' | 'type' | 'comps' | 'newdev' | 'vacant' | 'offmarket' | 'condos'
@@ -19,6 +22,8 @@ interface LayerSidebarProps {
   onLayerChange: (layer: LayerKey) => void
   onLoginClick?: () => void
   layerCounts?: Partial<Record<LayerKey, number>>
+  isOpen: boolean
+  onToggle: () => void
 }
 
 const PROPERTY_LAYERS: LayerConfig[] = [
@@ -106,21 +111,78 @@ function LayerButton({
   )
 }
 
-export function LayerSidebar({ activeLayer, onLayerChange, onLoginClick, layerCounts = {} }: LayerSidebarProps) {
+export function LayerSidebar({ activeLayer, onLayerChange, onLoginClick, layerCounts = {}, isOpen, onToggle }: LayerSidebarProps) {
+  // Close sidebar on Escape
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) onToggle()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [isOpen, onToggle])
+
   return (
-    <div className="w-[280px] bg-white border-r border-gray-200 flex flex-col shadow-[2px_0_12px_rgba(0,0,0,0.08)] z-[1000] flex-shrink-0">
-      {/* Header */}
-      <div className="px-4 py-4 bg-gradient-to-br from-[#1565c0] to-[#0d47a1] text-white">
-        <div className="flex items-center gap-3">
-          <div className="w-[42px] h-[42px] bg-gradient-to-br from-[#ffc107] to-[#ff9800] rounded-[10px] flex items-center justify-center text-2xl shadow-md">
-            🦅
-          </div>
-          <div className="text-xl font-extrabold">Building Hawk</div>
-        </div>
-        <div className="text-[10px] opacity-85 uppercase tracking-[1.5px] mt-2">
-          North Orange County Industrial CRE
+    <>
+      {/* Collapsed strip — always visible when sidebar closed */}
+      <div
+        className={`sidebar-collapsed-strip ${isOpen ? 'sidebar-strip-hidden' : ''}`}
+        style={{
+          width: 48,
+          background: 'linear-gradient(180deg, #1565c0 0%, #0d47a1 100%)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          paddingTop: 12,
+          flexShrink: 0,
+          zIndex: 1001,
+          position: 'relative',
+        }}
+      >
+        <button
+          onClick={onToggle}
+          className="w-10 h-10 flex items-center justify-center text-white hover:bg-white/20 rounded-lg transition-colors mb-2"
+          title="Open Sidebar"
+        >
+          <svg width="22" height="22" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div className="w-9 h-9 bg-gradient-to-br from-[#ffc107] to-[#ff9800] rounded-lg flex items-center justify-center text-lg shadow-md">
+          🦅
         </div>
       </div>
+
+      {/* Mobile overlay backdrop */}
+      {isOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={onToggle}
+        />
+      )}
+
+      {/* Sidebar panel */}
+      <div className={`sidebar-panel ${isOpen ? 'sidebar-open' : 'sidebar-closed'}`}>
+        {/* Header */}
+        <div className="px-4 py-4 bg-gradient-to-br from-[#1565c0] to-[#0d47a1] text-white flex items-center gap-3">
+          <div className="w-[42px] h-[42px] bg-gradient-to-br from-[#ffc107] to-[#ff9800] rounded-[10px] flex items-center justify-center text-2xl shadow-md flex-shrink-0">
+            🦅
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xl font-extrabold">Building Hawk</div>
+            <div className="text-[10px] opacity-85 uppercase tracking-[1.5px] mt-0.5">
+              North Orange County Industrial CRE
+            </div>
+          </div>
+          <button
+            onClick={onToggle}
+            className="w-8 h-8 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/20 rounded-lg transition-colors flex-shrink-0"
+            title="Close Sidebar"
+          >
+            <svg width="18" height="18" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+            </svg>
+          </button>
+        </div>
 
       {/* Layers */}
       <div className="flex-1 overflow-y-auto p-2">
@@ -179,6 +241,7 @@ export function LayerSidebar({ activeLayer, onLayerChange, onLoginClick, layerCo
         </button>
       </div>
     </div>
+    </>
   )
 }
 

@@ -823,3 +823,123 @@ body {
 @media (max-width: 900px) {
   .left-sidebar-responsive { width: 220px !important; }
 }
+
+
+/* ==============================================
+   RETRACTABLE SIDEBAR + TOP SEARCH BAR
+   ============================================== */
+
+/* Sidebar panel - slides in/out */
+.sidebar-panel {
+  width: 280px;
+  background: white;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 0 12px rgba(0,0,0,0.08);
+  z-index: 1002;
+  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 48px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s ease;
+  overflow: hidden;
+}
+
+.sidebar-open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-closed {
+  transform: translateX(-110%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Hide collapsed strip when sidebar is open */
+.sidebar-strip-hidden {
+  /* keep visible but shift content */
+}
+
+/* Backdrop overlay for mobile */
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Top floating search bar */
+.top-search-bar {
+  position: absolute;
+  top: 14px;
+  left: 296px;
+  right: 14px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.top-search-bar > * {
+  pointer-events: auto;
+}
+
+/* ---- MOBILE (< 768px) ---- */
+@media (max-width: 767px) {
+  .sidebar-panel {
+    position: fixed;
+    left: 0;
+    width: 280px;
+    z-index: 1100;
+    box-shadow: 4px 0 20px rgba(0,0,0,0.25);
+  }
+
+  .sidebar-collapsed-strip {
+    width: 44px !important;
+    padding-top: 8px !important;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 1099;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .top-search-bar {
+    left: 56px !important;
+    right: 10px;
+  }
+}
+
+/* ---- TABLET (768-1024) ---- */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .sidebar-panel {
+    width: 260px;
+  }
+}
+
+
+/* On mobile, stack filters below search */
+@media (max-width: 767px) {
+  .top-search-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .top-search-bar > .relative {
+    width: 100% !important;
+  }
+  .quick-filter-row {
+    margin-left: 0 !important;
+    gap: 4px !important;
+  }
+  .quick-filter-row button {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+  }
+}
