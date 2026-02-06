@@ -6,7 +6,8 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-draw'
 import 'leaflet-draw/dist/leaflet.draw.css'
-import 'leaflet.gridlayer.googlemutant'
+// Google Mutant loaded dynamically only when user selects "Satellite (HD)"
+// import 'leaflet.gridlayer.googlemutant' — DO NOT import at top level, crashes without window.google
 
 interface MapProps {
   onParcelSelect: (parcel: Parcel) => void
@@ -164,12 +165,12 @@ export function Map({
     north: number
   } | null>(null)
   const [localFileLoaded, setLocalFileLoaded] = useState(false)
-  const [localFeatureCount, setLocalFeatureCount] = useState(0)
-  const [imagerySource, setImagerySource] = useState<ImagerySource>('google')
+  const [_localFeatureCount, setLocalFeatureCount] = useState(0)
+  const [imagerySource, setImagerySource] = useState<ImagerySource>('esri')
   const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM)
   const [drawMode, setDrawMode] = useState<'none' | 'land' | 'building'>('none')
-  const [isDrawing, setIsDrawing] = useState(false)
-  const [classifyResult, setClassifyResult] = useState<{ count: number; classification: string } | null>(null)
+  const [_isDrawing, setIsDrawing] = useState(false)
+  const [_classifyResult, setClassifyResult] = useState<{ count: number; classification: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
 
@@ -231,7 +232,7 @@ export function Map({
   const parcelsData = selectedSearchLocation ? selectedParcelData : boundsParcelsData
 
   // Parcel style function - AQUA BLUE with semi-transparent fill (like reference image)
-  const getParcelStyle = useCallback((feature: any, zoom: number): L.PathOptions => {
+  const _getParcelStyle = useCallback((_feature: any, zoom: number): L.PathOptions => {
     // Hide parcels when zoomed out
     if (zoom < MIN_PARCEL_ZOOM) {
       return { opacity: 0, fillOpacity: 0 }
@@ -256,7 +257,7 @@ export function Map({
   }, [onParcelSelect, onParcelRightClick])
 
   // Handle local GeoJSON file upload
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const _handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !mapRef.current) return
 
@@ -301,7 +302,7 @@ export function Map({
           // Right click - context menu (use ref to avoid stale closure)
           layer.on('contextmenu', (e: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(e)
-            L.DomEvent.preventDefault(e)
+            L.DomEvent.preventDefault(e as unknown as Event)
             if (onParcelRightClickRef.current) {
               onParcelRightClickRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
             }
@@ -330,7 +331,7 @@ export function Map({
   }, []) // No dependencies - uses refs for callbacks
 
   // Clear local layer
-  const clearLocalLayer = useCallback(() => {
+  const _clearLocalLayer = useCallback(() => {
     if (localLayerRef.current) {
       localLayerRef.current.clearLayers()
       setLocalFileLoaded(false)
@@ -352,13 +353,46 @@ export function Map({
     }
 
     if (source === 'google') {
-      // Google Maps Satellite via GoogleMutant
-      const googleLayer = (L.gridLayer as any).googleMutant({
-        type: 'satellite',
-        maxZoom: 21,
-      })
-      googleLayer.addTo(map)
-      tileLayerRef.current = googleLayer
+      // Google Maps Satellite — dynamically load GoogleMutant only when needed
+      if (typeof window !== 'undefined' && (window as any).google?.maps) {
+        import('leaflet.gridlayer.googlemutant').then(() => {
+          try {
+            const googleLayer = (L.gridLayer as any).googleMutant({
+              type: 'satellite',
+              maxZoom: 21,
+            })
+            googleLayer.addTo(map)
+            tileLayerRef.current = googleLayer
+          } catch (err) {
+            console.warn('GoogleMutant failed, falling back to ESRI:', err)
+            const { url, attribution } = TILE_LAYERS.esri
+            const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+            fallback.addTo(map)
+            tileLayerRef.current = fallback
+            setImagerySource('esri')
+          }
+        }).catch(() => {
+          console.warn('GoogleMutant import failed, falling back to ESRI')
+          const { url, attribution } = TILE_LAYERS.esri
+          const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+          fallback.addTo(map)
+          tileLayerRef.current = fallback
+          setImagerySource('esri')
+        })
+        // Show ESRI temporarily while Google loads
+        const { url, attribution } = TILE_LAYERS.esri
+        const tempLayer = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+        tempLayer.addTo(map)
+        tileLayerRef.current = tempLayer
+      } else {
+        console.warn('Google Maps API not loaded, falling back to ESRI')
+        const { url, attribution } = TILE_LAYERS.esri
+        const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
+        fallback.addTo(map)
+        tileLayerRef.current = fallback
+        setImagerySource('esri')
+        return
+      }
     } else {
       // Standard tile layers (ESRI or OSM)
       const { url, attribution } = TILE_LAYERS[source]
@@ -413,14 +447,15 @@ export function Map({
     // Notify parent that map is ready
     onMapReady?.(map)
 
-    // Add default tile layer — Google Maps Satellite (highest resolution)
-    // Uses leaflet.gridlayer.googlemutant for official Google Maps tiles
-    const googleLayer = (L.gridLayer as any).googleMutant({
-      type: 'satellite',
-      maxZoom: 21,
+    // Add default tile layer (ESRI aerial with retina for sharper imagery)
+    const { url, attribution } = TILE_LAYERS.esri
+    const tileLayer = L.tileLayer(url, {
+      attribution,
+      maxZoom: 19,
+      detectRetina: true,
     })
-    googleLayer.addTo(map)
-    tileLayerRef.current = googleLayer
+    tileLayer.addTo(map)
+    tileLayerRef.current = tileLayer
 
     // Create custom pane for bright street labels (higher z-index)
     map.createPane('labelsPane')
@@ -749,7 +784,7 @@ export function Map({
             fillColor: parcelColor,
             fillOpacity: parcelFillOpacity,
           }),
-          onEachFeature: (f, l) => {
+          onEachFeature: (_f, l) => {
             const parcel: Parcel = {
               apn: feature.properties.apn,
               situs_address: feature.properties.address,
@@ -764,7 +799,7 @@ export function Map({
 
             // Add "SUBJECT" label for subject property
             if (isSubjectProperty && subjectPropertyLayerRef.current) {
-              const centroid = feature.properties.centroid as { coordinates: [number, number] } | undefined
+              const centroid = feature.properties.centroid as unknown as { coordinates: [number, number] } | undefined
               if (centroid && centroid.coordinates) {
                 const [lng, lat] = centroid.coordinates
                 const subjectIcon = L.divIcon({
@@ -787,7 +822,7 @@ export function Map({
             // Right click - context menu (use ref)
             l.on('contextmenu', (e: L.LeafletMouseEvent) => {
               L.DomEvent.stopPropagation(e)
-              L.DomEvent.preventDefault(e)
+              L.DomEvent.preventDefault(e as unknown as Event)
               if (onParcelRightClickRef.current) {
                 onParcelRightClickRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
               }
@@ -862,7 +897,7 @@ export function Map({
           if (props && onParcelSelectRef.current) {
             onParcelSelectRef.current({
               apn: feature.id as string || props.apn,
-              situs_address: props.situs_address || props.address,
+              situs_address: props.address,
               city: props.city,
               zip: props.zip,
               land_sf: props.land_sf,
@@ -879,7 +914,7 @@ export function Map({
             onParcelRightClickRef.current(
               {
                 apn: feature.id as string || props.apn,
-                situs_address: props.situs_address || props.address,
+                situs_address: props.address,
                 city: props.city,
                 zip: props.zip,
                 land_sf: props.land_sf,
@@ -1258,7 +1293,7 @@ export function Map({
         if (!unitMatch) return
 
         // Get centroid coordinates
-        const centroid = feature.properties.centroid as { coordinates: [number, number] } | undefined
+        const centroid = feature.properties.centroid as unknown as { coordinates: [number, number] } | undefined
         if (!centroid || !centroid.coordinates) return
 
         const [lng, lat] = centroid.coordinates
@@ -1381,7 +1416,7 @@ export function Map({
   }, [drawMode, classifyMutation])
 
   // Function to start drawing with specific mode
-  const startDrawing = useCallback((mode: 'land' | 'building') => {
+  const _startDrawing = useCallback((mode: 'land' | 'building') => {
     const map = mapRef.current
     if (!map) return
 
@@ -1401,7 +1436,7 @@ export function Map({
   }, [])
 
   // Function to clear all drawn polygons
-  const clearDrawnPolygons = useCallback(() => {
+  const _clearDrawnPolygons = useCallback(() => {
     const drawnItems = drawnItemsRef.current
     if (drawnItems) {
       drawnItems.clearLayers()
