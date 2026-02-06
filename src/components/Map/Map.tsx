@@ -510,9 +510,9 @@ export function Map({
     map.getPane('labelsPane')!.style.zIndex = '650'
     map.getPane('labelsPane')!.style.pointerEvents = 'none'
 
-    // Add street labels overlay - CartoDB dark_only_labels
+    // Add street labels overlay - CartoDB light_only_labels
     // White text designed for dark/satellite backgrounds
-    const streetLabelsLayer = L.tileLayer(CARTO_DARK_LABELS_URL, {
+    const streetLabelsLayer = L.tileLayer(CARTO_LABELS_URL, {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       maxNativeZoom: 18,
       maxZoom: 22,
@@ -756,67 +756,53 @@ export function Map({
       })
       const name = FREEWAY_NAMES[routeNum] || `Route ${routeNum}`
       marker.bindTooltip(name, {
-        permanent: false,
+        permanent: true,
         direction: 'top',
-        className: 'freeway-tooltip',
+        className: 'freeway-name-tooltip',
+        offset: [0, -8],
       })
       roadNameLabelsLayer.addLayer(marker)
     }
 
-    // Dynamic shield placement — place at midpoints of longest segments
-    const routesWithShields = new Set<string>()
-
-    Object.entries(freewaySegments).forEach(([routeNum, { coords: segments, isInterstate }]) => {
-      // Calculate segment lengths and sort by longest first
-      const segmentsWithLength = segments.map(seg => {
-        let len = 0
-        for (let i = 1; i < seg.length; i++) {
-          const dlat = seg[i][0] - seg[i - 1][0]
-          const dlng = seg[i][1] - seg[i - 1][1]
-          len += Math.sqrt(dlat * dlat + dlng * dlng)
-        }
-        return { seg, len }
-      }).sort((a, b) => b.len - a.len)
-
-      // More shields for interstates (5), fewer for state routes (3)
-      const maxShields = isInterstate ? 5 : 3
-      const placedPositions: [number, number][] = []
-
-      for (let i = 0; i < segmentsWithLength.length && placedPositions.length < maxShields; i++) {
-        const seg = segmentsWithLength[i].seg
-        if (seg.length < 2) continue
-        const midIdx = Math.floor(seg.length / 2)
-        const midLat = seg[midIdx][0]
-        const midLng = seg[midIdx][1]
-
-        // Tighter spacing (0.025 deg ~= 2.5km) for more shield coverage
-        const tooClose = placedPositions.some(([pLat, pLng]) =>
-          Math.abs(pLat - midLat) + Math.abs(pLng - midLng) < 0.025
-        )
-        if (tooClose) continue
-
-        placedPositions.push([midLat, midLng])
-        addShield(routeNum, midLat, midLng, isInterstate)
-      }
-
-      if (placedPositions.length > 0) routesWithShields.add(routeNum)
-    })
-
-    // Manual fallback shields for critical freeways that may not auto-place
-    // (e.g., I-5 segments in OC can be split across many short ways)
-    const MANUAL_SHIELD_FALLBACKS: { routeNum: string; lat: number; lng: number; isInterstate: boolean }[] = [
-      { routeNum: '5', lat: 33.835, lng: -117.885, isInterstate: true },  // I-5 near Anaheim
-      { routeNum: '5', lat: 33.745, lng: -117.868, isInterstate: true },  // I-5 near Santa Ana
-      { routeNum: '5', lat: 33.660, lng: -117.835, isInterstate: true },  // I-5 near Irvine
-      { routeNum: '405', lat: 33.72, lng: -117.95, isInterstate: true },  // I-405 near Fountain Valley
+    // FIXED: Exactly 2 shields per freeway, manually placed for clean layout
+    // No auto-placement — manual positions ensure perfect placement on the orange overlay
+    const SHIELD_POSITIONS: { routeNum: string; lat: number; lng: number; isInterstate: boolean }[] = [
+      // I-5 (Santa Ana Freeway) — runs N-S through west side
+      { routeNum: '5', lat: 33.86, lng: -117.91, isInterstate: true },   // I-5 north (near La Mirada)
+      { routeNum: '5', lat: 33.74, lng: -117.87, isInterstate: true },   // I-5 south (near Santa Ana)
+      // I-405 (San Diego Freeway) — runs NW-SE through west side
+      { routeNum: '405', lat: 33.78, lng: -117.96, isInterstate: true }, // I-405 north (near Seal Beach)
+      { routeNum: '405', lat: 33.68, lng: -117.86, isInterstate: true }, // I-405 south (near Costa Mesa)
+      // SR-91 (Riverside Freeway) — runs E-W through middle
+      { routeNum: '91', lat: 33.88, lng: -117.98, isInterstate: false }, // 91 west (near Buena Park)
+      { routeNum: '91', lat: 33.88, lng: -117.72, isInterstate: false }, // 91 east (near Yorba Linda)
+      // SR-57 (Orange Freeway) — runs N-S through center
+      { routeNum: '57', lat: 33.93, lng: -117.89, isInterstate: false }, // 57 north (near Brea)
+      { routeNum: '57', lat: 33.82, lng: -117.87, isInterstate: false }, // 57 south (near Orange)
+      // SR-55 (Costa Mesa Freeway) — runs N-S center-south
+      { routeNum: '55', lat: 33.78, lng: -117.87, isInterstate: false }, // 55 north (near Santa Ana)
+      { routeNum: '55', lat: 33.68, lng: -117.87, isInterstate: false }, // 55 south (near Costa Mesa)
+      // SR-22 (Garden Grove Freeway) — runs E-W southern area
+      { routeNum: '22', lat: 33.82, lng: -117.98, isInterstate: false }, // 22 west (near Garden Grove)
+      { routeNum: '22', lat: 33.82, lng: -117.78, isInterstate: false }, // 22 east (near Orange)
+      // SR-241 (Foothill/Eastern Toll Road) — runs N-S far east
+      { routeNum: '241', lat: 33.83, lng: -117.67, isInterstate: false }, // 241 north
+      { routeNum: '241', lat: 33.74, lng: -117.65, isInterstate: false }, // 241 south
+      // SR-133 (Laguna Freeway) — short, runs N-S
+      { routeNum: '133', lat: 33.73, lng: -117.79, isInterstate: false }, // 133 north
+      { routeNum: '133', lat: 33.66, lng: -117.78, isInterstate: false }, // 133 south
+      // SR-73 (San Joaquin Hills Toll Road) — runs NW-SE far south
+      { routeNum: '73', lat: 33.64, lng: -117.81, isInterstate: false }, // 73 north
+      { routeNum: '73', lat: 33.58, lng: -117.73, isInterstate: false }, // 73 south
+      // SR-261 (Eastern Toll Road) — short connector
+      { routeNum: '261', lat: 33.78, lng: -117.72, isInterstate: false }, // 261 north
+      { routeNum: '261', lat: 33.73, lng: -117.72, isInterstate: false }, // 261 south
     ]
 
-    MANUAL_SHIELD_FALLBACKS.forEach(({ routeNum, lat, lng, isInterstate }) => {
-      if (!routesWithShields.has(routeNum)) {
-        addShield(routeNum, lat, lng, isInterstate)
-        routesWithShields.add(routeNum)
-        console.log(`Added manual fallback shield for Route ${routeNum}`)
-      }
+    const routesWithShields = new Set<string>()
+    SHIELD_POSITIONS.forEach(({ routeNum, lat, lng, isInterstate }) => {
+      addShield(routeNum, lat, lng, isInterstate)
+      routesWithShields.add(routeNum)
     })
 
     console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments, shields on routes: ${[...routesWithShields].sort().join(', ')}`)
