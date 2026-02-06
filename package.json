@@ -23,6 +23,7 @@
     "framer-motion": "^10.18.0",
     "leaflet": "^1.9.4",
     "leaflet-draw": "^1.0.4",
+    "leaflet.gridlayer.googlemutant": "^0.16.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hook-form": "^7.49.3",

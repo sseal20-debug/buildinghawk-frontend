@@ -1087,6 +1087,9 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
                 onClose={closePanel}
                 onEntitySelect={handleEntitySelect}
                 onUnitSelect={handleAlertUnitSelect}
+                onParcelSelect={(apn) => {
+                  handleSearchSelect({ apn, centroid: undefined })
+                }}
               />
             )}
 

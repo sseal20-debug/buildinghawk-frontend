@@ -6,6 +6,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-draw'
 import 'leaflet-draw/dist/leaflet.draw.css'
+import 'leaflet.gridlayer.googlemutant'
 
 interface MapProps {
   onParcelSelect: (parcel: Parcel) => void
@@ -43,10 +44,10 @@ const OC_BOUNDS: L.LatLngBoundsExpression = [
 const NORTH_OC_CENTER: L.LatLngExpression = [33.84, -117.89]
 const DEFAULT_ZOOM = 13
 
-type ImagerySource = 'osm' | 'esri'
+type ImagerySource = 'osm' | 'esri' | 'google'
 
-// Tile layer URLs - all free, no API key needed
-const TILE_LAYERS: Record<ImagerySource, { url: string; attribution: string }> = {
+// Tile layer URLs for non-Google sources
+const TILE_LAYERS: Record<'osm' | 'esri', { url: string; attribution: string }> = {
   osm: {
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -105,7 +106,7 @@ const ROAD_OVERLAY_STYLES = {
   secondary: { color: 'rgba(0, 188, 188, 0.4)', weight: 2 },     // Teal/aqua blue (lighter)
 }
 
-// Freeway route names for tooltips
+// Freeway name lookup for tooltip display
 const FREEWAY_NAMES: Record<string, string> = {
   '91': 'Riverside Freeway',
   '57': 'Orange Freeway',
@@ -117,17 +118,6 @@ const FREEWAY_NAMES: Record<string, string> = {
   '261': 'Eastern Toll Road',
   '133': 'Laguna Freeway',
   '73': 'San Joaquin Hills Toll Road',
-}
-
-// Manual shield positions for key freeways (placed on actual road centerlines)
-// These override dynamic placement to ensure correct, visible locations
-const MANUAL_SHIELD_POSITIONS: Record<string, { positions: [number, number][]; isInterstate: boolean }> = {
-  '5':   { positions: [[33.87, -117.925], [33.78, -117.885], [33.70, -117.855]], isInterstate: true },
-  '405': { positions: [[33.72, -117.935], [33.67, -117.925]], isInterstate: true },
-  '91':  { positions: [[33.878, -117.940]], isInterstate: false },  // Between I-5 & SR-57
-  '57':  { positions: [[33.91, -117.895], [33.84, -117.895]], isInterstate: false },
-  '22':  { positions: [[33.798, -117.945], [33.798, -117.870]], isInterstate: false },
-  '55':  { positions: [[33.77, -117.868], [33.83, -117.868]], isInterstate: false },
 }
 
 export function Map({
@@ -160,7 +150,6 @@ export function Map({
   const propertyLayerRef = useRef<L.LayerGroup | null>(null)
   const landLayerRef = useRef<L.LayerGroup | null>(null)
   const addressLabelLayerRef = useRef<L.LayerGroup | null>(null)
-  const freewayShieldsLayerRef = useRef<L.LayerGroup | null>(null)
   const subjectPropertyLayerRef = useRef<L.LayerGroup | null>(null)
   const roadOverlayLayerRef = useRef<L.LayerGroup | null>(null)
   const roadNameLabelsLayerRef = useRef<L.LayerGroup | null>(null)
@@ -176,7 +165,7 @@ export function Map({
   } | null>(null)
   const [localFileLoaded, setLocalFileLoaded] = useState(false)
   const [localFeatureCount, setLocalFeatureCount] = useState(0)
-  const [imagerySource, setImagerySource] = useState<ImagerySource>('esri')
+  const [imagerySource, setImagerySource] = useState<ImagerySource>('google')
   const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM)
   const [drawMode, setDrawMode] = useState<'none' | 'land' | 'building'>('none')
   const [isDrawing, setIsDrawing] = useState(false)
@@ -362,17 +351,29 @@ export function Map({
       map.removeLayer(tileLayerRef.current)
     }
 
-    // Add new tile layer
-    const { url, attribution } = TILE_LAYERS[source]
-    const newTileLayer = L.tileLayer(url, {
-      attribution,
-      maxZoom: 19,
-    })
-    newTileLayer.addTo(map)
-    tileLayerRef.current = newTileLayer
+    if (source === 'google') {
+      // Google Maps Satellite via GoogleMutant
+      const googleLayer = (L.gridLayer as any).googleMutant({
+        type: 'satellite',
+        maxZoom: 21,
+      })
+      googleLayer.addTo(map)
+      tileLayerRef.current = googleLayer
+    } else {
+      // Standard tile layers (ESRI or OSM)
+      const { url, attribution } = TILE_LAYERS[source]
+      const newTileLayer = L.tileLayer(url, {
+        attribution,
+        maxZoom: source === 'esri' ? 19 : 19,
+        detectRetina: source === 'esri', // retina rendering for ESRI
+      })
+      newTileLayer.addTo(map)
+      tileLayerRef.current = newTileLayer
+    }
 
-    // Re-add street labels on top (if zoomed in enough and using satellite)
-    if (source === 'esri' && streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
+    // Re-add street labels on top (if zoomed in enough and using satellite imagery)
+    const isSatellite = source === 'esri' || source === 'google'
+    if (isSatellite && streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
       if (!map.hasLayer(streetLabelsLayerRef.current)) {
         streetLabelsLayerRef.current.addTo(map)
       }
@@ -412,14 +413,14 @@ export function Map({
     // Notify parent that map is ready
     onMapReady?.(map)
 
-    // Add default tile layer (ESRI aerial)
-    const { url, attribution } = TILE_LAYERS.esri
-    const tileLayer = L.tileLayer(url, {
-      attribution,
-      maxZoom: 19,
+    // Add default tile layer — Google Maps Satellite (highest resolution)
+    // Uses leaflet.gridlayer.googlemutant for official Google Maps tiles
+    const googleLayer = (L.gridLayer as any).googleMutant({
+      type: 'satellite',
+      maxZoom: 21,
     })
-    tileLayer.addTo(map)
-    tileLayerRef.current = tileLayer
+    googleLayer.addTo(map)
+    tileLayerRef.current = googleLayer
 
     // Create custom pane for bright street labels (higher z-index)
     map.createPane('labelsPane')
@@ -427,7 +428,7 @@ export function Map({
     map.getPane('labelsPane')!.style.pointerEvents = 'none'
 
     // Add street labels overlay - CartoDB dark_only_labels
-    // Light text designed for dark/satellite backgrounds, includes freeway shields
+    // Light text designed for dark/satellite backgrounds
     const streetLabelsLayer = L.tileLayer(CARTO_LABELS_URL, {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       maxZoom: 19,
@@ -482,13 +483,6 @@ export function Map({
     const addressLabelLayer = L.layerGroup()
     addressLabelLayer.addTo(map)
     addressLabelLayerRef.current = addressLabelLayer
-
-    // Create freeway shields layer
-    const freewayShieldsLayer = L.layerGroup()
-    freewayShieldsLayer.addTo(map)
-    freewayShieldsLayerRef.current = freewayShieldsLayer
-
-    // Freeway shields are added dynamically when road geometry loads (see useEffect below)
 
     // Create subject property layer (for highlighting specific property in RED)
     const subjectPropertyLayer = L.layerGroup()
@@ -593,13 +587,11 @@ export function Map({
   useEffect(() => {
     const roadOverlayLayer = roadOverlayLayerRef.current
     const roadNameLabelsLayer = roadNameLabelsLayerRef.current
-    const freewayShieldsLayer = freewayShieldsLayerRef.current
-    if (!roadOverlayLayer || !roadNameLabelsLayer || !freewayShieldsLayer || !roadGeometryData) return
+    if (!roadOverlayLayer || !roadNameLabelsLayer || !roadGeometryData) return
 
     // Clear existing overlays, labels, and shields
     roadOverlayLayer.clearLayers()
     roadNameLabelsLayer.clearLayers()
-    freewayShieldsLayer.clearLayers()
 
     console.log(`Rendering ${roadGeometryData.features.length} road overlay segments`)
 
@@ -630,11 +622,9 @@ export function Map({
 
       // Collect freeway segments for shield placement
       if (roadType === 'freeway' && feature.properties.ref) {
-        // Parse route numbers from ref (e.g. "CA 91", "I 5", "I 405", "91;57")
-        const refs = feature.properties.ref.split(';')
+        const refs = (feature.properties.ref as string).split(';')
         refs.forEach(rawRef => {
           const cleaned = rawRef.trim()
-          // Extract route number
           const match = cleaned.match(/(\d+)/)
           if (!match) return
           const routeNum = match[1]
@@ -660,36 +650,33 @@ export function Map({
             <div class="shield-inner">${routeNum}</div>
           </div>`
 
+      const iconSize: [number, number] = isInterstate ? [48, 48] : [46, 52]
+      const iconAnchor: [number, number] = isInterstate ? [24, 24] : [23, 26]
+
       const icon = L.divIcon({
         className: 'freeway-shield-container',
         html: shieldHtml,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
+        iconSize,
+        iconAnchor,
       })
 
-      const marker = L.marker([lat, lng], { icon, interactive: false })
+      const marker = L.marker([lat, lng], {
+        icon,
+        interactive: true,
+        pane: 'roadNameLabelsPane',
+      })
       const name = FREEWAY_NAMES[routeNum] || `Route ${routeNum}`
       marker.bindTooltip(name, {
         permanent: false,
         direction: 'top',
-        className: 'freeway-tooltip'
+        className: 'freeway-tooltip',
       })
-      freewayShieldsLayer.addLayer(marker)
+      roadNameLabelsLayer.addLayer(marker)
     }
 
-    // Track which routes got manual shields
-    const manualRoutes = new Set<string>()
-
-    // Place manual shields first (precise positioning for key freeways)
-    Object.entries(MANUAL_SHIELD_POSITIONS).forEach(([routeNum, { positions, isInterstate }]) => {
-      manualRoutes.add(routeNum)
-      positions.forEach(([lat, lng]) => addShield(routeNum, lat, lng, isInterstate))
-    })
-
-    // Dynamic placement for remaining freeways not in manual list
+    // Dynamic shield placement — place at midpoints of longest segments
     Object.entries(freewaySegments).forEach(([routeNum, { coords: segments, isInterstate }]) => {
-      if (manualRoutes.has(routeNum)) return // Skip — already placed manually
-
+      // Calculate segment lengths and sort by longest first
       const segmentsWithLength = segments.map(seg => {
         let len = 0
         for (let i = 1; i < seg.length; i++) {
@@ -700,16 +687,18 @@ export function Map({
         return { seg, len }
       }).sort((a, b) => b.len - a.len)
 
-      const shieldCount = Math.min(2, segmentsWithLength.length)
+      // Place up to 3 shields per route, with min ~4km distance between them
+      const maxShields = 3
       const placedPositions: [number, number][] = []
 
-      for (let i = 0; i < segmentsWithLength.length && placedPositions.length < shieldCount; i++) {
+      for (let i = 0; i < segmentsWithLength.length && placedPositions.length < maxShields; i++) {
         const seg = segmentsWithLength[i].seg
         if (seg.length < 2) continue
         const midIdx = Math.floor(seg.length / 2)
         const midLat = seg[midIdx][0]
         const midLng = seg[midIdx][1]
 
+        // Ensure shields aren't too close together (0.04 deg ~= 4km)
         const tooClose = placedPositions.some(([pLat, pLng]) =>
           Math.abs(pLat - midLat) + Math.abs(pLng - midLng) < 0.04
         )
@@ -1432,12 +1421,20 @@ export function Map({
           </div>
           <div className="flex flex-col">
             <button
+              onClick={() => switchImagery('google')}
+              className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
+                imagerySource === 'google' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+              }`}
+            >
+              Satellite (HD)
+            </button>
+            <button
               onClick={() => switchImagery('esri')}
               className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
                 imagerySource === 'esri' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
               }`}
             >
-              Satellite
+              Satellite (ESRI)
             </button>
             <button
               onClick={() => switchImagery('osm')}

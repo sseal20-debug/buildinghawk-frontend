@@ -1,5 +1,6 @@
 // LayerSidebar - Left panel with 28 layer buttons (26 original + Condos + Stats)
-// Mobile-responsive: slides in as overlay on screens < 768px
+// Mobile: collapses to 48px icon strip with hamburger toggle
+// Desktop: always expanded at 260px
 
 import { useEffect } from 'react'
 
@@ -14,6 +15,7 @@ interface LayerConfig {
   label: string
   number: number
   dotClass: string
+  icon: string
   count?: number
 }
 
@@ -27,48 +29,49 @@ interface LayerSidebarProps {
 }
 
 const PROPERTY_LAYERS: LayerConfig[] = [
-  { key: 'listings', label: 'New Listings/Updates', number: 1, dotClass: 'bg-[#e91e63]' },
-  { key: 'address', label: 'Address', number: 2, dotClass: 'bg-[#9c27b0]' },
-  { key: 'specs', label: 'Specs', number: 3, dotClass: 'bg-[#673ab7]' },
-  { key: 'type', label: 'Type', number: 4, dotClass: 'bg-[#3f51b5]' },
-  { key: 'comps', label: 'Comps', number: 9, dotClass: 'bg-[#4caf50]' },
-  { key: 'newdev', label: 'New Developments', number: 10, dotClass: 'bg-[#8bc34a]' },
-  { key: 'vacant', label: 'Vacant', number: 11, dotClass: 'bg-[#cddc39]' },
-  { key: 'condos', label: 'Condos', number: 27, dotClass: 'bg-[#00acc1]' },
-  { key: 'offmarket', label: 'Off-Market', number: 13, dotClass: 'bg-[#ffc107]' },
+  { key: 'listings', label: 'New Listings/Updates', number: 1, dotClass: 'bg-[#e91e63]', icon: '📋' },
+  { key: 'address', label: 'Address', number: 2, dotClass: 'bg-[#9c27b0]', icon: '📍' },
+  { key: 'specs', label: 'Specs', number: 3, dotClass: 'bg-[#673ab7]', icon: '📐' },
+  { key: 'type', label: 'Type', number: 4, dotClass: 'bg-[#3f51b5]', icon: '🏭' },
+  { key: 'comps', label: 'Comps', number: 9, dotClass: 'bg-[#4caf50]', icon: '📊' },
+  { key: 'newdev', label: 'New Developments', number: 10, dotClass: 'bg-[#8bc34a]', icon: '🏗️' },
+  { key: 'vacant', label: 'Vacant', number: 11, dotClass: 'bg-[#cddc39]', icon: '🔑' },
+  { key: 'condos', label: 'Condos', number: 27, dotClass: 'bg-[#00acc1]', icon: '🏢' },
+  { key: 'offmarket', label: 'Off-Market', number: 13, dotClass: 'bg-[#ffc107]', icon: '🔒' },
 ]
 
 const PEOPLE_LAYERS: LayerConfig[] = [
-  { key: 'tenants', label: 'Tenants', number: 5, dotClass: 'bg-[#2196f3]' },
-  { key: 'owners', label: 'Owner-Users', number: 6, dotClass: 'bg-[#03a9f4]' },
-  { key: 'buy-lease', label: 'Users – Buy/Lease', number: 7, dotClass: 'bg-[#00bcd4]' },
-  { key: 'investor', label: 'Investor – Buy/Sell', number: 8, dotClass: 'bg-[#009688]' },
-  { key: 'looking', label: 'Looking', number: 12, dotClass: 'bg-[#ffeb3b]' },
-  { key: 'clients', label: 'Clients', number: 21, dotClass: 'bg-[#2196f3]' },
+  { key: 'tenants', label: 'Tenants', number: 5, dotClass: 'bg-[#2196f3]', icon: '👤' },
+  { key: 'owners', label: 'Owner-Users', number: 6, dotClass: 'bg-[#03a9f4]', icon: '🏠' },
+  { key: 'buy-lease', label: 'Users – Buy/Lease', number: 7, dotClass: 'bg-[#00bcd4]', icon: '🔄' },
+  { key: 'investor', label: 'Investor – Buy/Sell', number: 8, dotClass: 'bg-[#009688]', icon: '💰' },
+  { key: 'looking', label: 'Looking', number: 12, dotClass: 'bg-[#ffeb3b]', icon: '🔍' },
+  { key: 'clients', label: 'Clients', number: 21, dotClass: 'bg-[#2196f3]', icon: '🤝' },
 ]
 
 const MARKET_LAYERS: LayerConfig[] = [
-  { key: 'distressed', label: 'Distressed', number: 14, dotClass: 'bg-[#ff9800]' },
-  { key: 'news', label: 'Business News', number: 15, dotClass: 'bg-[#ff5722]' },
-  { key: 'contaminated', label: 'Contaminated Sites', number: 16, dotClass: 'bg-[#795548]' },
-  { key: 'obituaries', label: 'Obituaries', number: 17, dotClass: 'bg-[#607d8b]' },
-  { key: 'bankruptcy', label: 'Bankruptcy', number: 18, dotClass: 'bg-[#f44336]' },
-  { key: 'auctions', label: 'Auctions', number: 20, dotClass: 'bg-[#9c27b0]' },
-  { key: 'mergers', label: 'Mergers & Acquisitions', number: 22, dotClass: 'bg-[#00bcd4]' },
-  { key: 'notes', label: 'Note Buying', number: 24, dotClass: 'bg-[#4caf50]' },
+  { key: 'distressed', label: 'Distressed', number: 14, dotClass: 'bg-[#ff9800]', icon: '⚠️' },
+  { key: 'news', label: 'Business News', number: 15, dotClass: 'bg-[#ff5722]', icon: '📰' },
+  { key: 'contaminated', label: 'Contaminated Sites', number: 16, dotClass: 'bg-[#795548]', icon: '☢️' },
+  { key: 'obituaries', label: 'Obituaries', number: 17, dotClass: 'bg-[#607d8b]', icon: '🕊️' },
+  { key: 'bankruptcy', label: 'Bankruptcy', number: 18, dotClass: 'bg-[#f44336]', icon: '📉' },
+  { key: 'auctions', label: 'Auctions', number: 20, dotClass: 'bg-[#9c27b0]', icon: '🔨' },
+  { key: 'mergers', label: 'Mergers & Acquisitions', number: 22, dotClass: 'bg-[#00bcd4]', icon: '🔗' },
+  { key: 'notes', label: 'Note Buying', number: 24, dotClass: 'bg-[#4caf50]', icon: '📝' },
 ]
 
 const TOOLS_LAYERS: LayerConfig[] = [
-  { key: 'alerts', label: 'Alerts', number: 19, dotClass: 'bg-[#e91e63]' },
-  { key: 'social', label: 'Social Media', number: 23, dotClass: 'bg-[#3f51b5]' },
-  { key: 'custom', label: 'Customization', number: 25, dotClass: 'bg-[#ff9800]' },
-  { key: 'crm', label: 'CRM', number: 26, dotClass: 'bg-[#607d8b]' },
-  { key: 'stats', label: 'Market Stats', number: 28, dotClass: 'bg-[#7c4dff]' },
+  { key: 'alerts', label: 'Alerts', number: 19, dotClass: 'bg-[#e91e63]', icon: '🔔' },
+  { key: 'social', label: 'Social Media', number: 23, dotClass: 'bg-[#3f51b5]', icon: '📱' },
+  { key: 'custom', label: 'Customization', number: 25, dotClass: 'bg-[#ff9800]', icon: '⚙️' },
+  { key: 'crm', label: 'CRM', number: 26, dotClass: 'bg-[#607d8b]', icon: '💼' },
+  { key: 'stats', label: 'Market Stats', number: 28, dotClass: 'bg-[#7c4dff]', icon: '📈' },
 ]
 
-function SectionHeader({ icon, label }: { icon: string; label: string }) {
+function SectionHeader({ icon, label, collapsed }: { icon: string; label: string; collapsed: boolean }) {
+  if (collapsed) return null
   return (
-    <div className="px-4 py-3 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2 border-t border-gray-200">
+    <div className="px-3 py-2.5 bg-gray-50 text-[10px] font-bold uppercase tracking-wider text-gray-500 flex items-center gap-2 border-t border-gray-200">
       <span>{icon}</span> {label}
     </div>
   )
@@ -79,16 +82,34 @@ function LayerButton({
   isActive,
   onClick,
   count,
+  collapsed,
 }: {
   layer: LayerConfig
   isActive: boolean
   onClick: () => void
   count?: number
+  collapsed: boolean
 }) {
+  if (collapsed) {
+    return (
+      <button
+        onClick={onClick}
+        title={`${layer.number}. ${layer.label}`}
+        className={`w-full p-2 flex items-center justify-center transition-all duration-150 rounded-md mb-0.5 ${
+          isActive
+            ? 'bg-[#1565c0] text-white shadow-md'
+            : 'text-gray-500 hover:bg-blue-50 hover:text-[#1565c0]'
+        }`}
+      >
+        <span className="text-base">{layer.icon}</span>
+      </button>
+    )
+  }
+
   return (
     <button
       onClick={onClick}
-      className={`w-full px-3.5 py-2.5 mb-1 rounded-lg text-[13px] font-medium flex items-center gap-2.5 text-left transition-all duration-150 border-2 ${
+      className={`w-full px-3 py-2 mb-0.5 rounded-lg text-[13px] font-medium flex items-center gap-2 text-left transition-all duration-150 border-2 ${
         isActive
           ? 'bg-[#1565c0] text-white border-[#0d47a1] shadow-md shadow-blue-500/30'
           : 'bg-gray-50 text-gray-600 border-transparent hover:bg-blue-50 hover:border-blue-200 hover:text-[#1565c0]'
@@ -186,7 +207,7 @@ export function LayerSidebar({ activeLayer, onLayerChange, onLoginClick, layerCo
 
       {/* Layers */}
       <div className="flex-1 overflow-y-auto p-2">
-        <SectionHeader icon="🏢" label="Property Layers" />
+        <SectionHeader icon="🏢" label="Property Layers" collapsed={false} />
         {PROPERTY_LAYERS.map((layer) => (
           <LayerButton
             key={layer.key}
@@ -194,10 +215,11 @@ export function LayerSidebar({ activeLayer, onLayerChange, onLoginClick, layerCo
             isActive={activeLayer === layer.key}
             onClick={() => onLayerChange(layer.key)}
             count={layerCounts[layer.key]}
+            collapsed={false}
           />
         ))}
 
-        <SectionHeader icon="👥" label="People & Entities" />
+        <SectionHeader icon="👥" label="People & Entities" collapsed={false} />
         {PEOPLE_LAYERS.map((layer) => (
           <LayerButton
             key={layer.key}
@@ -205,10 +227,11 @@ export function LayerSidebar({ activeLayer, onLayerChange, onLoginClick, layerCo
             isActive={activeLayer === layer.key}
             onClick={() => onLayerChange(layer.key)}
             count={layerCounts[layer.key]}
+            collapsed={false}
           />
         ))}
 
-        <SectionHeader icon="📊" label="Market Intelligence" />
+        <SectionHeader icon="📊" label="Market Intelligence" collapsed={false} />
         {MARKET_LAYERS.map((layer) => (
           <LayerButton
             key={layer.key}
@@ -216,10 +239,11 @@ export function LayerSidebar({ activeLayer, onLayerChange, onLoginClick, layerCo
             isActive={activeLayer === layer.key}
             onClick={() => onLayerChange(layer.key)}
             count={layerCounts[layer.key]}
+            collapsed={false}
           />
         ))}
 
-        <SectionHeader icon="⚙️" label="Tools & Settings" />
+        <SectionHeader icon="⚙️" label="Tools & Settings" collapsed={false} />
         {TOOLS_LAYERS.map((layer) => (
           <LayerButton
             key={layer.key}
@@ -227,6 +251,7 @@ export function LayerSidebar({ activeLayer, onLayerChange, onLoginClick, layerCo
             isActive={activeLayer === layer.key}
             onClick={() => onLayerChange(layer.key)}
             count={layerCounts[layer.key]}
+            collapsed={false}
           />
         ))}
       </div>
