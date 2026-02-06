@@ -621,6 +621,71 @@ export const documentsApi = {
     ),
 };
 
+// Address Documents API (organized PDFs from Dropbox, indexed by address)
+export const addressDocumentsApi = {
+  // Get all PDFs for an address (exact or fuzzy match)
+  getByAddress: (address: string) =>
+    request<{
+      normalized: string;
+      display: string;
+      city?: string;
+      files: Array<{
+        filename: string;
+        original_path: string;
+        archive_path: string;
+        file_size: number;
+        document_type: string;
+        added_date: string;
+      }>;
+      file_count: number;
+      fuzzy_match?: boolean;
+      alternatives?: Array<{
+        normalized: string;
+        display: string;
+        city?: string;
+        file_count: number;
+        score: number;
+      }>;
+    }>(`/address-documents?address=${encodeURIComponent(address)}`),
+
+  // Search addresses
+  search: (query: string, limit = 20) =>
+    request<{
+      results: Array<{
+        normalized: string;
+        display: string;
+        city?: string;
+        file_count: number;
+        score: number;
+      }>;
+      total: number;
+    }>(`/address-documents/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+
+  // Get direct URL to view a PDF
+  getFileUrl: (archivePath: string) =>
+    `${API_BASE}/address-documents/file/${encodeURIComponent(archivePath)}`,
+
+  // Get system stats
+  getStats: () =>
+    request<{
+      total_addresses: number;
+      total_files: number;
+      generated_at: string;
+      cities: Record<string, number>;
+      document_types: Record<string, number>;
+    }>('/address-documents/stats'),
+
+  // Batch check multiple addresses for document counts
+  batchCheck: (addresses: string[]) =>
+    request<Record<string, { has_docs: boolean; count: number }>>(
+      '/address-documents/batch-check',
+      {
+        method: 'POST',
+        body: JSON.stringify({ addresses }),
+      }
+    ),
+};
+
 // Alerts API
 export const alertsApi = {
   list: (options?: { completed?: boolean; upcoming_days?: number }) =>
