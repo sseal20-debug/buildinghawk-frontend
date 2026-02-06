@@ -30,6 +30,8 @@ interface MapProps {
   onMapReady?: (map: L.Map) => void
   // Company labels for tenant overlay (Layer 5)
   companyLabels?: CompanyLabel[]
+  // Quick filter state — null = parcels hidden, 'all' = show all, etc.
+  quickFilter?: string | null
   // Active layer name for badge display
   activeLayerName?: string
 }
@@ -136,6 +138,7 @@ export function Map({
   showRecentSold = false,
   showRecentLeased = false,
   companyLabels,
+  quickFilter = null,
   onMapReady,
   activeLayerName = 'New Listings/Updates',
 }: MapProps) {
@@ -154,6 +157,7 @@ export function Map({
   const roadOverlayLayerRef = useRef<L.LayerGroup | null>(null)
   const roadNameLabelsLayerRef = useRef<L.LayerGroup | null>(null)
   const companyLabelLayerRef = useRef<L.LayerGroup | null>(null)
+  const selectedParcelsLayerRef = useRef<L.LayerGroup | null>(null)
   const drawnItemsRef = useRef<L.FeatureGroup | null>(null)
   const drawControlRef = useRef<L.Control.Draw | null>(null)
 
@@ -174,6 +178,9 @@ export function Map({
   const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM)
   const [drawMode, setDrawMode] = useState<'none' | 'land' | 'building'>('none')
   const [_isDrawing, setIsDrawing] = useState(false)
+  // Multi-select: individually clicked parcels (always visible regardless of quick filter)
+  const [selectedParcelApns, setSelectedParcelApns] = useState<Set<string>>(new Set())
+  const selectedParcelDataRef = useRef<Map<string, { feature: any; parcel: Parcel }>>(new Map())
   const [_classifyResult, setClassifyResult] = useState<{ count: number; classification: string } | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
@@ -207,11 +214,11 @@ export function Map({
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
-  // Fetch parcels within bounds (only when zoomed in enough AND no specific location selected)
+  // Fetch parcels within bounds (only when zoomed in enough AND no specific location selected AND quick filter is active)
   const { data: boundsParcelsData } = useQuery({
     queryKey: ['parcels', mapBounds],
     queryFn: () => parcelsApi.getInBounds(mapBounds!),
-    enabled: !!mapBounds && currentZoom >= MIN_PARCEL_ZOOM && !selectedSearchLocation,
+    enabled: !!mapBounds && currentZoom >= MIN_PARCEL_ZOOM && !selectedSearchLocation && quickFilter !== null,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
@@ -499,8 +506,8 @@ export function Map({
     map.getPane('labelsPane')!.style.pointerEvents = 'none'
 
     // Add street labels overlay - CartoDB dark_only_labels
-    // Light text designed for dark/satellite backgrounds
-    const streetLabelsLayer = L.tileLayer(CARTO_LABELS_URL, {
+    // White text designed for dark/satellite backgrounds
+    const streetLabelsLayer = L.tileLayer(CARTO_DARK_LABELS_URL, {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       maxZoom: 19,
       opacity: 1,
@@ -572,7 +579,7 @@ export function Map({
 
     // Create pane for road name labels (above road overlays, below parcels)
     map.createPane('roadNameLabelsPane')
-    map.getPane('roadNameLabelsPane')!.style.zIndex = '430' // Above road overlays (420)
+    map.getPane('roadNameLabelsPane')!.style.zIndex = '640' // Just below labels (650), above everything else
     map.getPane('roadNameLabelsPane')!.style.pointerEvents = 'none'
 
     const roadNameLabelsLayer = L.layerGroup()
@@ -583,6 +590,11 @@ export function Map({
     const companyLabelLayer = L.layerGroup()
     companyLabelLayer.addTo(map)
     companyLabelLayerRef.current = companyLabelLayer
+
+    // Create selected parcels layer (always visible, for individually clicked parcels)
+    const selectedParcelsLayer = L.layerGroup()
+    selectedParcelsLayer.addTo(map)
+    selectedParcelsLayerRef.current = selectedParcelsLayer
 
     // Road overlays and labels will be added dynamically via useEffect when roadGeometryData loads
 
@@ -746,6 +758,8 @@ export function Map({
     }
 
     // Dynamic shield placement — place at midpoints of longest segments
+    const routesWithShields = new Set<string>()
+
     Object.entries(freewaySegments).forEach(([routeNum, { coords: segments, isInterstate }]) => {
       // Calculate segment lengths and sort by longest first
       const segmentsWithLength = segments.map(seg => {
@@ -758,8 +772,8 @@ export function Map({
         return { seg, len }
       }).sort((a, b) => b.len - a.len)
 
-      // Place up to 3 shields per route, with min ~4km distance between them
-      const maxShields = 3
+      // More shields for interstates (5), fewer for state routes (3)
+      const maxShields = isInterstate ? 5 : 3
       const placedPositions: [number, number][] = []
 
       for (let i = 0; i < segmentsWithLength.length && placedPositions.length < maxShields; i++) {
@@ -769,23 +783,43 @@ export function Map({
         const midLat = seg[midIdx][0]
         const midLng = seg[midIdx][1]
 
-        // Ensure shields aren't too close together (0.04 deg ~= 4km)
+        // Tighter spacing (0.025 deg ~= 2.5km) for more shield coverage
         const tooClose = placedPositions.some(([pLat, pLng]) =>
-          Math.abs(pLat - midLat) + Math.abs(pLng - midLng) < 0.04
+          Math.abs(pLat - midLat) + Math.abs(pLng - midLng) < 0.025
         )
         if (tooClose) continue
 
         placedPositions.push([midLat, midLng])
         addShield(routeNum, midLat, midLng, isInterstate)
       }
+
+      if (placedPositions.length > 0) routesWithShields.add(routeNum)
     })
 
-    console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments`)
+    // Manual fallback shields for critical freeways that may not auto-place
+    // (e.g., I-5 segments in OC can be split across many short ways)
+    const MANUAL_SHIELD_FALLBACKS: { routeNum: string; lat: number; lng: number; isInterstate: boolean }[] = [
+      { routeNum: '5', lat: 33.835, lng: -117.885, isInterstate: true },  // I-5 near Anaheim
+      { routeNum: '5', lat: 33.745, lng: -117.868, isInterstate: true },  // I-5 near Santa Ana
+      { routeNum: '5', lat: 33.660, lng: -117.835, isInterstate: true },  // I-5 near Irvine
+      { routeNum: '405', lat: 33.72, lng: -117.95, isInterstate: true },  // I-405 near Fountain Valley
+    ]
+
+    MANUAL_SHIELD_FALLBACKS.forEach(({ routeNum, lat, lng, isInterstate }) => {
+      if (!routesWithShields.has(routeNum)) {
+        addShield(routeNum, lat, lng, isInterstate)
+        routesWithShields.add(routeNum)
+        console.log(`Added manual fallback shield for Route ${routeNum}`)
+      }
+    })
+
+    console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments, shields on routes: ${[...routesWithShields].sort().join(', ')}`)
   }, [roadGeometryData])
 
   // Update parcels when data changes (but not on selection change)
+  // Also hides bulk parcels when quickFilter is null
   useEffect(() => {
-    if (!parcelLayerRef.current || !parcelsData) return
+    if (!parcelLayerRef.current) return
 
     const parcelLayer = parcelLayerRef.current
     parcelLayer.clearLayers()
@@ -794,6 +828,9 @@ export function Map({
     if (subjectPropertyLayerRef.current) {
       subjectPropertyLayerRef.current.clearLayers()
     }
+
+    // If quickFilter is null, don't show bulk parcels
+    if (quickFilter === null || !parcelsData) return
 
     // Add new features - AQUA BLUE default, RED for subject property
     parcelsData.features.forEach((feature: ParcelFeature) => {
@@ -849,10 +886,24 @@ export function Map({
               }
             }
 
-            // Left click - select parcel (use ref)
+            // Left click - select parcel + toggle in selectedParcels set
             l.on('click', (e: L.LeafletMouseEvent) => {
               L.DomEvent.stopPropagation(e)
               onParcelSelectRef.current(parcel)
+
+              // Also toggle in the selected parcels set
+              const clickedApn = parcel.apn
+              setSelectedParcelApns(prev => {
+                const next = new Set(prev)
+                if (next.has(clickedApn)) {
+                  next.delete(clickedApn)
+                  selectedParcelDataRef.current.delete(clickedApn)
+                } else {
+                  next.add(clickedApn)
+                  selectedParcelDataRef.current.set(clickedApn, { feature, parcel })
+                }
+                return next
+              })
             })
 
             // Right click - context menu (use ref)
@@ -870,11 +921,12 @@ export function Map({
         // Skip invalid geometries
       }
     })
-  }, [parcelsData]) // Only depends on data, not callbacks
+  }, [parcelsData, quickFilter]) // Re-render when data or quick filter changes
 
   // Update styles when zoom changes (only visibility) - AQUA BLUE
+  // Also hides when quickFilter is null (parcels hidden by default)
   useEffect(() => {
-    const style = currentZoom < MIN_PARCEL_ZOOM
+    const style = (currentZoom < MIN_PARCEL_ZOOM || quickFilter === null)
       ? { opacity: 0, fillOpacity: 0 }
       : {
           color: PARCEL_COLORS.default, // Aqua/Cyan Blue
@@ -890,7 +942,126 @@ export function Map({
     if (localLayerRef.current) {
       localLayerRef.current.setStyle(() => style)
     }
-  }, [currentZoom])
+  }, [currentZoom, quickFilter])
+
+  // Click-to-select: clicking on the map fetches the parcel at that point and toggles selection
+  // Works even when quickFilter is null (bulk parcels hidden) — individually selected parcels always show
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const handleMapClick = async (e: L.LeafletMouseEvent) => {
+      // Don't interfere with clicks on existing parcel layers (they handle their own click)
+      // Only trigger for map clicks (not parcel polygon clicks)
+      const lat = e.latlng.lat
+      const lng = e.latlng.lng
+
+      // Must be zoomed in enough to identify parcels
+      if (map.getZoom() < MIN_PARCEL_ZOOM) return
+
+      try {
+        const result = await parcelsApi.getAtPoint(lat, lng)
+        if (!result || !result.features || result.features.length === 0) return
+
+        const feature = result.features[0]
+        const apn = feature.properties?.apn
+        if (!apn) return
+
+        setSelectedParcelApns(prev => {
+          const next = new Set(prev)
+          if (next.has(apn)) {
+            // Deselect
+            next.delete(apn)
+            selectedParcelDataRef.current.delete(apn)
+          } else {
+            // Select
+            next.add(apn)
+            selectedParcelDataRef.current.set(apn, {
+              feature,
+              parcel: {
+                apn: feature.properties.apn,
+                situs_address: feature.properties.address,
+                city: feature.properties.city,
+                zip: feature.properties.zip,
+                land_sf: feature.properties.land_sf,
+                zoning: feature.properties.zoning,
+                building_count: feature.properties.building_count,
+                unit_count: feature.properties.unit_count,
+                vacant_count: feature.properties.vacant_count,
+              } as Parcel,
+            })
+          }
+          return next
+        })
+      } catch (err) {
+        console.error('Failed to fetch parcel at point:', err)
+      }
+    }
+
+    map.on('click', handleMapClick)
+    return () => {
+      map.off('click', handleMapClick)
+    }
+  }, []) // Stable — uses refs and state setters only
+
+  // Render selected parcels in their own always-visible layer (yellow highlight)
+  useEffect(() => {
+    const layer = selectedParcelsLayerRef.current
+    if (!layer) return
+
+    layer.clearLayers()
+
+    selectedParcelDataRef.current.forEach(({ feature, parcel }, apn) => {
+      if (!selectedParcelApns.has(apn)) return
+
+      try {
+        const geoLayer = L.geoJSON({
+          type: 'Feature',
+          geometry: feature.geometry,
+          properties: feature.properties,
+        } as any, {
+          style: () => ({
+            color: '#FFFF00',      // Bright yellow
+            weight: 4,
+            opacity: 1,
+            fillColor: '#FFFF00',
+            fillOpacity: 0.35,
+          }),
+          onEachFeature: (_f, l) => {
+            // Click on selected parcel → deselect it (toggle off) + open detail
+            l.on('click', (e: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(e)
+              onParcelSelectRef.current(parcel)
+              // Toggle off — remove from selected set
+              setSelectedParcelApns(prev => {
+                const next = new Set(prev)
+                if (next.has(apn)) {
+                  next.delete(apn)
+                  selectedParcelDataRef.current.delete(apn)
+                } else {
+                  next.add(apn)
+                }
+                return next
+              })
+            })
+            l.on('contextmenu', (e: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(e)
+              L.DomEvent.preventDefault(e as unknown as Event)
+              if (onParcelRightClickRef.current) {
+                onParcelRightClickRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
+              }
+            })
+          },
+        })
+        layer.addLayer(geoLayer)
+      } catch (e) {
+        // Skip invalid geometries
+      }
+    })
+
+    // Bring selected parcels above bulk parcels
+    layer.bringToFront()
+  }, [selectedParcelApns])
 
   // Handle center prop changes
   useEffect(() => {
@@ -1546,6 +1717,20 @@ export function Map({
       <div className="absolute bottom-4 right-4 z-[1000] bg-white px-2 py-1 rounded shadow text-xs text-gray-600">
         Zoom: {currentZoom} {currentZoom < MIN_PARCEL_ZOOM && '(zoom in to see parcels)'}
       </div>
+
+      {/* CLEAR button for selected parcels — only visible when parcels are selected */}
+      {selectedParcelApns.size > 0 && (
+        <button
+          onClick={() => {
+            setSelectedParcelApns(new Set())
+            selectedParcelDataRef.current.clear()
+          }}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-full shadow-lg transition-all hover:scale-105"
+        >
+          <span>✕</span>
+          <span>Clear ({selectedParcelApns.size} parcel{selectedParcelApns.size !== 1 ? 's' : ''})</span>
+        </button>
+      )}
     </div>
   )
 }

@@ -21,8 +21,8 @@ interface TopSearchBarProps {
   onSelect: (result: { lat: number; lng: number; address: string }) => void
   onSearchChange: (query: string) => void
   sidebarOpen: boolean
-  activeFilter: QuickFilter
-  onFilterChange: (filter: QuickFilter) => void
+  activeFilter: QuickFilter | null
+  onFilterChange: (filter: QuickFilter | null) => void
 }
 
 export function TopSearchBar({ onSelect, onSearchChange, sidebarOpen, activeFilter, onFilterChange }: TopSearchBarProps) {
@@ -266,7 +266,7 @@ export function TopSearchBar({ onSelect, onSearchChange, sidebarOpen, activeFilt
         {filters.map((f) => (
           <button
             key={f.key}
-            onClick={() => onFilterChange(f.key)}
+            onClick={() => onFilterChange(activeFilter === f.key ? null : f.key)}
             className={`px-3 py-1.5 rounded-full text-[11px] font-bold border shadow-sm whitespace-nowrap transition-all hover:scale-105 ${
               activeFilter === f.key ? f.activeColor : f.color
             }`}

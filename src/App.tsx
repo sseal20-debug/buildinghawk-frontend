@@ -586,7 +586,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   // Sidebar state
   const [activeLayer, setActiveLayer] = useState<LayerKey>('listings')
   const [sidebarOpen, setSidebarOpen] = useState(true)
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
+  const [quickFilter, setQuickFilter] = useState<QuickFilter | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
   // Context menu state
@@ -988,6 +988,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             propertyMarkers={showProperties ? propertiesData : undefined}
             landMarkers={showLand ? landData : undefined}
             companyLabels={showTenantLabels ? companyLabelsData : undefined}
+            quickFilter={quickFilter}
             onMapReady={(map) => {
               mapComponentRef.current = { getMap: () => map }
             }}
