@@ -6,8 +6,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-draw'
 import 'leaflet-draw/dist/leaflet.draw.css'
-// Google Mutant loaded dynamically only when user selects "Satellite (HD)"
-// import 'leaflet.gridlayer.googlemutant' — DO NOT import at top level, crashes without window.google
+// leaflet.gridlayer.googlemutant available but not used — Google Maps API key needs Maps JS API enabled
 
 interface MapProps {
   onParcelSelect: (parcel: Parcel) => void
@@ -45,10 +44,10 @@ const OC_BOUNDS: L.LatLngBoundsExpression = [
 const NORTH_OC_CENTER: L.LatLngExpression = [33.84, -117.89]
 const DEFAULT_ZOOM = 13
 
-type ImagerySource = 'osm' | 'esri' | 'google'
+type ImagerySource = 'osm' | 'esri'
 
-// Tile layer URLs for non-Google sources
-const TILE_LAYERS: Record<'osm' | 'esri', { url: string; attribution: string }> = {
+// Tile layer URLs
+const TILE_LAYERS: Record<ImagerySource, { url: string; attribution: string }> = {
   osm: {
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -352,61 +351,18 @@ export function Map({
       map.removeLayer(tileLayerRef.current)
     }
 
-    if (source === 'google') {
-      // Google Maps Satellite — dynamically load GoogleMutant only when needed
-      if (typeof window !== 'undefined' && (window as any).google?.maps) {
-        import('leaflet.gridlayer.googlemutant').then(() => {
-          try {
-            const googleLayer = (L.gridLayer as any).googleMutant({
-              type: 'satellite',
-              maxZoom: 21,
-            })
-            googleLayer.addTo(map)
-            tileLayerRef.current = googleLayer
-          } catch (err) {
-            console.warn('GoogleMutant failed, falling back to ESRI:', err)
-            const { url, attribution } = TILE_LAYERS.esri
-            const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
-            fallback.addTo(map)
-            tileLayerRef.current = fallback
-            setImagerySource('esri')
-          }
-        }).catch(() => {
-          console.warn('GoogleMutant import failed, falling back to ESRI')
-          const { url, attribution } = TILE_LAYERS.esri
-          const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
-          fallback.addTo(map)
-          tileLayerRef.current = fallback
-          setImagerySource('esri')
-        })
-        // Show ESRI temporarily while Google loads
-        const { url, attribution } = TILE_LAYERS.esri
-        const tempLayer = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
-        tempLayer.addTo(map)
-        tileLayerRef.current = tempLayer
-      } else {
-        console.warn('Google Maps API not loaded, falling back to ESRI')
-        const { url, attribution } = TILE_LAYERS.esri
-        const fallback = L.tileLayer(url, { attribution, maxZoom: 19, detectRetina: true })
-        fallback.addTo(map)
-        tileLayerRef.current = fallback
-        setImagerySource('esri')
-        return
-      }
-    } else {
-      // Standard tile layers (ESRI or OSM)
-      const { url, attribution } = TILE_LAYERS[source]
-      const newTileLayer = L.tileLayer(url, {
-        attribution,
-        maxZoom: source === 'esri' ? 19 : 19,
-        detectRetina: source === 'esri', // retina rendering for ESRI
-      })
-      newTileLayer.addTo(map)
-      tileLayerRef.current = newTileLayer
-    }
+    // Add new tile layer
+    const { url, attribution } = TILE_LAYERS[source]
+    const newTileLayer = L.tileLayer(url, {
+      attribution,
+      maxZoom: 19,
+      detectRetina: source === 'esri', // retina rendering for ESRI
+    })
+    newTileLayer.addTo(map)
+    tileLayerRef.current = newTileLayer
 
     // Re-add street labels on top (if zoomed in enough and using satellite imagery)
-    const isSatellite = source === 'esri' || source === 'google'
+    const isSatellite = source === 'esri'
     if (isSatellite && streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
       if (!map.hasLayer(streetLabelsLayerRef.current)) {
         streetLabelsLayerRef.current.addTo(map)
@@ -1456,20 +1412,12 @@ export function Map({
           </div>
           <div className="flex flex-col">
             <button
-              onClick={() => switchImagery('google')}
-              className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
-                imagerySource === 'google' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
-              }`}
-            >
-              Satellite (HD)
-            </button>
-            <button
               onClick={() => switchImagery('esri')}
               className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
                 imagerySource === 'esri' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
               }`}
             >
-              Satellite (ESRI)
+              Satellite
             </button>
             <button
               onClick={() => switchImagery('osm')}
