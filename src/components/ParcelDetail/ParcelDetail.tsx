@@ -202,9 +202,9 @@ export function ParcelDetail({ apn, onUnitSelect, onAddUnit, onClose }: ParcelDe
             />
           ) : (
             <div className="text-sm font-medium text-gray-900">
-              {parcel.occupants && parcel.occupants.length > 0 ? (
+              {(parcel as any).occupants && (parcel as any).occupants.length > 0 ? (
                 <div className="space-y-1">
-                  {parcel.occupants.map((occ: any, i: number) => (
+                  {(parcel as any).occupants.map((occ: any, i: number) => (
                     <div key={occ.entity_id || i} className="flex items-center gap-1">
                       <span className="truncate">{occ.entity_name}</span>
                       {occ.website && (

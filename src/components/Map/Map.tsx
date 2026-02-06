@@ -99,13 +99,12 @@ const LABEL_COLORS = {
 // Subject property address to highlight in RED
 const SUBJECT_PROPERTY_ADDRESS = '1193 N Blue Gum St'
 
-// Road overlay colors by type - BRIGHT ORANGE for freeways, TEAL/AQUA for streets
-// Thinner lines for cleaner appearance
+// Road overlay colors by type - BRIGHT VIVID colors visible over satellite imagery
 const ROAD_OVERLAY_STYLES = {
-  freeway: { color: 'rgba(255, 165, 0, 0.7)', weight: 6 },       // Bright orange - thin
-  highway: { color: 'rgba(255, 165, 0, 0.6)', weight: 4 },       // Orange (ramps/links)
-  primary: { color: 'rgba(0, 188, 188, 0.5)', weight: 3 },       // Teal/aqua blue
-  secondary: { color: 'rgba(0, 188, 188, 0.4)', weight: 2 },     // Teal/aqua blue (lighter)
+  freeway: { color: '#FF6600', weight: 8, opacity: 0.85 },        // Vivid orange - thick
+  highway: { color: '#FF8800', weight: 5, opacity: 0.75 },        // Orange (ramps/links)
+  primary: { color: '#00E5FF', weight: 4, opacity: 0.7 },         // Bright cyan/aqua
+  secondary: { color: '#00BCD4', weight: 3, opacity: 0.6 },       // Teal
 }
 
 // Freeway name lookup for tooltip display
@@ -702,7 +701,7 @@ export function Map({
       const polyline = L.polyline(coords, {
         color: style.color,
         weight: style.weight,
-        opacity: 1,
+        opacity: (style as any).opacity || 0.8,
         lineCap: 'round',
         lineJoin: 'round',
         pane: 'roadOverlayPane',

@@ -518,23 +518,8 @@ body {
    Semi-transparent overlay along major roads
    ============================================== */
 
-/* Freeway overlay - semi-transparent dark band */
-.freeway-overlay {
-  stroke: rgba(0, 0, 0, 0.4) !important;
-  stroke-width: 40px !important;
-  fill: none !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-}
-
-/* Street overlay - lighter transparency */
-.street-overlay {
-  stroke: rgba(0, 0, 0, 0.25) !important;
-  stroke-width: 20px !important;
-  fill: none !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-}
+/* LEGACY: Dark overlays removed - now using bright colored polylines via JS
+   Freeway = vivid orange (#FF6600), Primary = bright cyan (#00E5FF) */
 
 /* Major road label background */
 .road-label-bg {
@@ -594,22 +579,8 @@ body {
    Semi-transparent white bands along freeways and major roads
    ============================================== */
 
-/* Freeway overlay line - wider, more prominent */
-.freeway-overlay-line {
-  stroke: rgba(255, 255, 255, 0.5) !important;
-  stroke-width: 25px !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.3));
-}
-
-/* Major road overlay line - narrower */
-.road-overlay-line {
-  stroke: rgba(255, 255, 255, 0.35) !important;
-  stroke-width: 12px !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-}
+/* LEGACY: Overlay line CSS classes removed - road styling now handled via JS polylines
+   with vivid orange/cyan colors and per-type opacity */
 
 /* Road overlay pane styling */
 .leaflet-pane.roadOverlayPane {
