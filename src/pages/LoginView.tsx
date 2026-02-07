@@ -1,8 +1,7 @@
 // LoginView Component - Building Hawk Login Screen
-// With Biometric Authentication and Role Selection
+// Password authentication with role selection
 
 import { useState, useCallback } from 'react'
-import { useSimpleBiometricAuth } from '../hooks/useBiometricAuth'
 import { roles, type Role, type UserSession } from '../styles/theme'
 
 interface LoginViewProps {
@@ -10,8 +9,6 @@ interface LoginViewProps {
 }
 
 export function LoginView({ onLogin }: LoginViewProps) {
-  const { isSupported: biometricsSupported, isAuthenticating, authenticate } = useSimpleBiometricAuth()
-
   // Form state
   const [selectedRole, setSelectedRole] = useState<Role>('Broker/Agent')
   const [email, setEmail] = useState('')
@@ -19,25 +16,6 @@ export function LoginView({ onLogin }: LoginViewProps) {
   const [rememberMe, setRememberMe] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
-
-  // Handle biometric authentication
-  const handleBiometricLogin = useCallback(async () => {
-    setError(null)
-
-    const result = await authenticate()
-
-    if (result.success) {
-      const user: UserSession = {
-        email: email || localStorage.getItem('buildingHawkEmail') || 'user@example.com',
-        role: selectedRole,
-        authenticated: true,
-      }
-      localStorage.setItem('buildingHawkUser', JSON.stringify(user))
-      onLogin(user)
-    } else {
-      setError(result.error || 'Authentication failed. Please try password login.')
-    }
-  }, [authenticate, email, selectedRole, onLogin])
 
   const [isLoading, setIsLoading] = useState(false)
 
@@ -183,31 +161,6 @@ export function LoginView({ onLogin }: LoginViewProps) {
             <div className="p-3 bg-red-500/20 rounded-lg text-red-300 text-sm text-center">
               {error}
             </div>
-          )}
-
-          {/* Biometric Login Button */}
-          <button
-            type="button"
-            onClick={handleBiometricLogin}
-            disabled={isAuthenticating}
-            className={`flex items-center justify-center gap-2.5 px-5 py-3.5 text-base font-semibold rounded-lg border-none bg-gold text-navy-dark cursor-pointer transition-all shadow-lg shadow-gold/40 hover:bg-gold-light ${
-              isAuthenticating ? 'opacity-70' : ''
-            }`}
-          >
-            {isAuthenticating ? (
-              <span>Authenticating...</span>
-            ) : (
-              <>
-                <span className="text-xl">🔐</span>
-                <span>Login with Face ID / Fingerprint</span>
-              </>
-            )}
-          </button>
-
-          {!biometricsSupported && (
-            <p className="text-xs text-white/60 text-center -mt-2">
-              Biometric auth requires a secure context (HTTPS) and compatible device
-            </p>
           )}
 
           {/* Password Login Button */}
