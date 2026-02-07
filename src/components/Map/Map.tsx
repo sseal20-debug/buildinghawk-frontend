@@ -1817,40 +1817,6 @@ export function Map({
         shieldContainerRef.current
       )}
 
-      {/* Imagery Source Selector */}
-      <div className="absolute top-20 right-4 z-[1000]">
-        <div className="bg-white rounded-lg shadow-lg overflow-hidden">
-          <div className="text-xs font-medium text-gray-500 px-3 py-1 bg-gray-50 border-b">
-            Map Style
-          </div>
-          <div className="flex flex-col">
-            <button
-              onClick={() => switchImagery('google')}
-              className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
-                imagerySource === 'google' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
-              }`}
-            >
-              🛰️ Satellite (HD)
-            </button>
-            <button
-              onClick={() => switchImagery('esri')}
-              className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
-                imagerySource === 'esri' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
-              }`}
-            >
-              Satellite
-            </button>
-            <button
-              onClick={() => switchImagery('osm')}
-              className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
-                imagerySource === 'osm' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
-              }`}
-            >
-              Street Map
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* 3D View toggle — show at zoom >= 19 */}
       {currentZoom >= 19 && !show3D && (
