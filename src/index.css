@@ -1185,6 +1185,16 @@ body {
 .fsp-city-item input[type="checkbox"] {
   accent-color: #3b82f6;
 }
+.fsp-city-count {
+  margin-left: auto;
+  font-size: 11px;
+  color: #64748b;
+}
+.fsp-city-clear {
+  color: #f87171;
+  font-weight: 600;
+  border-bottom: 1px solid #334155;
+}
 
 /* Action buttons */
 .fsp-actions {
@@ -1305,6 +1315,19 @@ body {
 
 .fsp-td-muted {
   color: #64748b;
+}
+.fsp-td-owner {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #cbd5e1;
+}
+.fsp-td-type {
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #94a3b8;
+  font-size: 12px;
 }
 
 /* Status badges */
