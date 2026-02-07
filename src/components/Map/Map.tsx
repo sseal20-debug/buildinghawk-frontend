@@ -466,37 +466,22 @@ export function Map({
     onMapReady?.(map)
 
     // Add default tile layer — try Google Maps Satellite (HD) first, fall back to ESRI
-    const tryGoogleDefault = () => {
-      if (typeof window !== 'undefined' && (window as any).google?.maps) {
-        import('leaflet.gridlayer.googlemutant').then(() => {
-          if (!mapRef.current) return
-          const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 21 })
-          googleLayer.addTo(mapRef.current)
-          tileLayerRef.current = googleLayer
-          setImagerySource('google')
-          console.log('Google Maps Satellite (HD) loaded as default')
-        }).catch(() => {
-          // Plugin failed — use ESRI
-          addEsriDefault()
-        })
-      } else {
-        // Google API not ready yet — start with ESRI, retry Google after delay
-        addEsriDefault()
-        setTimeout(() => {
-          if ((window as any).google?.maps && mapRef.current && imagerySourceRef.current === 'esri') {
-            // Google loaded now — switch silently
-            import('leaflet.gridlayer.googlemutant').then(() => {
-              if (!mapRef.current || !tileLayerRef.current) return
-              mapRef.current.removeLayer(tileLayerRef.current)
-              const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 21 })
-              googleLayer.addTo(mapRef.current)
-              tileLayerRef.current = googleLayer
-              setImagerySource('google')
-              console.log('Upgraded to Google Maps Satellite (HD)')
-            }).catch(() => { /* stay on ESRI */ })
-          }
-        }, 3000)
-      }
+    // Google has more recent aerial imagery than ESRI (which can be 2-4 years old)
+    const upgradeToGoogle = () => {
+      import('leaflet.gridlayer.googlemutant').then(() => {
+        if (!mapRef.current) return
+        // Remove ESRI if it was the fallback
+        if (tileLayerRef.current && mapRef.current.hasLayer(tileLayerRef.current)) {
+          mapRef.current.removeLayer(tileLayerRef.current)
+        }
+        const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 22 })
+        googleLayer.addTo(mapRef.current)
+        tileLayerRef.current = googleLayer
+        setImagerySource('google')
+        console.log('Google Maps Satellite (HD) loaded — most recent aerial imagery')
+      }).catch((err: any) => {
+        console.warn('GoogleMutant plugin failed:', err)
+      })
     }
 
     const addEsriDefault = () => {
@@ -508,7 +493,26 @@ export function Map({
       setImagerySource('esri')
     }
 
-    tryGoogleDefault()
+    // Start with ESRI immediately (so map isn't blank), then upgrade to Google when ready
+    addEsriDefault()
+
+    // Try upgrading to Google immediately if API is already loaded
+    if ((window as any).google?.maps) {
+      upgradeToGoogle()
+    } else {
+      // Retry every 1.5 seconds for up to 15 seconds
+      let retryCount = 0
+      const retryInterval = setInterval(() => {
+        retryCount++
+        if ((window as any).google?.maps && mapRef.current && imagerySourceRef.current === 'esri') {
+          clearInterval(retryInterval)
+          upgradeToGoogle()
+        } else if (retryCount >= 10) {
+          clearInterval(retryInterval)
+          console.log('Google Maps API did not load — staying on ESRI satellite')
+        }
+      }, 1500)
+    }
 
     // Create custom pane for bright street labels (higher z-index)
     map.createPane('labelsPane')
@@ -1716,6 +1720,7 @@ export function Map({
   }, [])
 
   // 3D View — create/destroy Google Maps 3D element when show3D toggles
+  // Uses Google Photorealistic 3D Tiles — most recent aerial + 3D buildings
   useEffect(() => {
     if (!show3D) {
       // Destroy 3D element if exists
@@ -1734,28 +1739,33 @@ export function Map({
       const zoom = mapRef.current.getZoom()
 
       // Convert Leaflet zoom to Google Maps 3D range (meters above ground)
-      // Approximate: range = 591657550.5 / 2^zoom
+      // Higher zoom = closer to ground. At zoom 19, range ~1100m. At 20, ~550m.
       const range = 591657550.5 / Math.pow(2, zoom)
 
       try {
-        // Load Google Maps 3D library
+        // Load Google Maps 3D library (requires v=alpha in script tag)
         const maps3d = await (window as any).google.maps.importLibrary('maps3d')
         const { Map3DElement } = maps3d
 
-        // Create the 3D map element
+        // Create the 3D map element — photorealistic 3D tiles with full aerial coverage
         const map3d = new Map3DElement({
           center: { lat: center.lat, lng: center.lng, altitude: 0 },
-          range: Math.max(range, 200), // At least 200m
-          tilt: 55,
+          range: Math.max(range, 150), // At least 150m above ground
+          tilt: 60, // Tilted view to see 3D buildings
           heading: 0,
-          mode: 'SATELLITE',
         })
+
+        // Style: fill entire container
+        map3d.style.width = '100%'
+        map3d.style.height = '100%'
 
         map3dContainerRef.current.innerHTML = ''
         map3dContainerRef.current.appendChild(map3d)
         map3dElementRef.current = map3d
+        console.log('3D View initialized — Google Photorealistic 3D Tiles (latest aerial)')
       } catch (err) {
         console.error('Failed to initialize 3D view:', err)
+        alert('3D View requires the Map Tiles API to be enabled in Google Cloud Console for your API key.')
         setShow3D(false)
       }
     }
@@ -1764,6 +1774,7 @@ export function Map({
       init3D()
     } else {
       console.warn('Google Maps API not available for 3D view')
+      alert('Google Maps API not loaded. Check your API key.')
       setShow3D(false)
     }
   }, [show3D])
