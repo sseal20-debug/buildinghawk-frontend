@@ -12,6 +12,7 @@ import { ParcelClassifier } from "./components/ParcelClassifier"
 import { LayerSidebar } from "./components/Sidebar"
 import type { LayerKey } from "./components/Sidebar"
 import { TopSearchBar } from "./components/Search/TopSearchBar"
+import { FullSearchPage } from "./components/Search/FullSearchPage"
 import type { QuickFilter } from "./components/Search/TopSearchBar"
 import L from 'leaflet'
 import { DocumentDrawer } from "./components/DocumentDrawer"
@@ -31,6 +32,7 @@ import type { UserSession } from "./styles/theme"
 
 type ViewState =
   | { type: "map" }
+  | { type: "search-fullscreen" }
   | { type: "parcel"; apn: string }
   | { type: "unit"; unitId: string }
   | { type: "unit-edit"; unitId: string; buildingId: string }
@@ -492,12 +494,34 @@ export default function App() {
   const [user, setUser] = useState<UserSession | null>(null)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
 
-  // Check for existing session on mount
+  // Check for existing session on mount - VALIDATE apiKey against backend
   useEffect(() => {
     const storedUser = localStorage.getItem('buildingHawkUser')
     if (storedUser) {
       try {
-        setUser(JSON.parse(storedUser))
+        const parsed = JSON.parse(storedUser)
+        if (parsed.apiKey) {
+          // Verify the stored apiKey is still valid
+          const apiUrl = import.meta.env.VITE_API_URL || ''
+          fetch(`${apiUrl}/api/auth/check`, {
+            headers: { 'x-api-key': parsed.apiKey },
+          })
+            .then((res) => {
+              if (res.ok) {
+                setUser(parsed)
+              } else {
+                localStorage.removeItem('buildingHawkUser')
+              }
+              setIsCheckingAuth(false)
+            })
+            .catch(() => {
+              localStorage.removeItem('buildingHawkUser')
+              setIsCheckingAuth(false)
+            })
+          return
+        } else {
+          localStorage.removeItem('buildingHawkUser')
+        }
       } catch {
         localStorage.removeItem('buildingHawkUser')
       }
@@ -583,9 +607,9 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_activeFilterTab, _setActiveFilterTab] = useState<FilterTabId>(null)
 
-  // Sidebar state
+  // Sidebar state — start closed on mobile so the map is visible
   const [activeLayer, setActiveLayer] = useState<LayerKey>('listings')
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768)
   const [quickFilter, setQuickFilter] = useState<QuickFilter | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -913,6 +937,8 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         onLayerChange={(layer) => {
           setActiveLayer(layer)
+          // Auto-close sidebar on mobile after selecting a layer
+          if (window.innerWidth < 768) setSidebarOpen(false)
           // Enable properties/land automatically based on layer
           if (layer === 'listings' || layer === 'address' || layer === 'specs' || layer === 'type' || layer === 'comps' || layer === 'vacant' || layer === 'offmarket' || layer === 'newdev' || layer === 'condos') {
             setShowProperties(true)
@@ -928,7 +954,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             // Property Layers
             listings: 'hotsheet',
             address: 'address',
-            specs: 'search',
+            // specs handled separately below (full-screen search page)
             type: 'type',
             comps: 'comps',
             vacant: 'vacant',
@@ -947,6 +973,12 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             alerts: 'alerts',
             crm: 'explorer',
             stats: 'stats',
+          }
+          // Specs layer opens full-screen search page
+          if (layer === 'specs') {
+            setPanelView('none')
+            setViewState({ type: 'search-fullscreen' })
+            return
           }
           const panel = layerPanelMap[layer]
           if (panel) {
@@ -972,8 +1004,26 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         onFilterChange={setQuickFilter}
       />
 
+      {/* Full-Screen Search Page (replaces map when active) */}
+      {viewState.type === 'search-fullscreen' && (
+        <div className="flex-1 relative z-0 min-w-0 h-full overflow-hidden">
+          <FullSearchPage
+            onNavigateToProperty={(lat, lng, apn) => {
+              setViewState({ type: 'map' })
+              setPanelView('none')
+              setMapCenter({ lat, lng })
+              setSelectedSearchLocation({ lat, lng })
+            }}
+            onClose={() => {
+              setViewState({ type: 'map' })
+              setPanelView('none')
+            }}
+          />
+        </div>
+      )}
+
       {/* Center - Map */}
-      <div className="flex-1 relative z-0 min-w-0 h-full overflow-hidden">
+      {viewState.type !== 'search-fullscreen' && <div className="flex-1 relative z-0 min-w-0 h-full overflow-hidden">
         {/* Map */}
         <div className="absolute inset-0">
           <Map
@@ -1210,7 +1260,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             onAction={handleContextMenuAction}
           />
         )}
-      </div>
+      </div>}
 
     </div>
   )
