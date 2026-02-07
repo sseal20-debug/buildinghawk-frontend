@@ -468,6 +468,11 @@ export function Map({
     // Add default tile layer — try Google Maps Satellite (HD) first, fall back to ESRI
     // Google has more recent aerial imagery than ESRI (which can be 2-4 years old)
     const upgradeToGoogle = () => {
+      // Verify Google Maps API is fully loaded with Map constructor
+      if (!(window as any).google?.maps?.Map) {
+        console.warn('Google Maps API not fully loaded yet (Map constructor missing)')
+        return
+      }
       import('leaflet.gridlayer.googlemutant').then(() => {
         if (!mapRef.current) return
         // Remove ESRI if it was the fallback
@@ -497,21 +502,22 @@ export function Map({
     addEsriDefault()
 
     // Try upgrading to Google immediately if API is already loaded
-    if ((window as any).google?.maps) {
+    if ((window as any).google?.maps?.Map) {
       upgradeToGoogle()
     } else {
-      // Retry every 1.5 seconds for up to 15 seconds
+      // Retry every 2 seconds for up to 30 seconds (Google script can be slow)
       let retryCount = 0
       const retryInterval = setInterval(() => {
         retryCount++
-        if ((window as any).google?.maps && mapRef.current && imagerySourceRef.current === 'esri') {
+        if ((window as any).google?.maps?.Map && mapRef.current && imagerySourceRef.current === 'esri') {
           clearInterval(retryInterval)
+          console.log(`Google Maps API loaded after ${retryCount * 2}s — upgrading from ESRI`)
           upgradeToGoogle()
-        } else if (retryCount >= 10) {
+        } else if (retryCount >= 15) {
           clearInterval(retryInterval)
-          console.log('Google Maps API did not load — staying on ESRI satellite')
+          console.warn('Google Maps API did not load after 30s — staying on ESRI satellite')
         }
-      }, 1500)
+      }, 2000)
     }
 
     // Create custom pane for bright street labels (higher z-index)
