@@ -610,7 +610,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   // Sidebar state — start closed on mobile so the map is visible
   const [activeLayer, setActiveLayer] = useState<LayerKey>('listings')
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768)
-  const [quickFilter, setQuickFilter] = useState<QuickFilter | null>(null)
+  const [quickFilter, setQuickFilter] = useState<QuickFilter | null>('all')
   const [searchQuery, setSearchQuery] = useState('')
 
   // Context menu state
