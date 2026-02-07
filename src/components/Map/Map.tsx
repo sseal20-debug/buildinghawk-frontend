@@ -465,60 +465,13 @@ export function Map({
     // Notify parent that map is ready
     onMapReady?.(map)
 
-    // Add default tile layer — try Google Maps Satellite (HD) first, fall back to ESRI
-    // Google has more recent aerial imagery than ESRI (which can be 2-4 years old)
-    const upgradeToGoogle = () => {
-      // Verify Google Maps API is fully loaded with Map constructor
-      if (!(window as any).google?.maps?.Map) {
-        console.warn('Google Maps API not fully loaded yet (Map constructor missing)')
-        return
-      }
-      import('leaflet.gridlayer.googlemutant').then(() => {
-        if (!mapRef.current) return
-        // Remove ESRI if it was the fallback
-        if (tileLayerRef.current && mapRef.current.hasLayer(tileLayerRef.current)) {
-          mapRef.current.removeLayer(tileLayerRef.current)
-        }
-        const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 22 })
-        googleLayer.addTo(mapRef.current)
-        tileLayerRef.current = googleLayer
-        setImagerySource('google')
-        console.log('Google Maps Satellite (HD) loaded — most recent aerial imagery')
-      }).catch((err: any) => {
-        console.warn('GoogleMutant plugin failed:', err)
-      })
-    }
-
-    const addEsriDefault = () => {
-      if (!mapRef.current) return
-      const { url, attribution } = TILE_LAYERS.esri
-      const tileLayer = L.tileLayer(url, { attribution, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
-      tileLayer.addTo(mapRef.current)
-      tileLayerRef.current = tileLayer
-      setImagerySource('esri')
-    }
-
-    // Start with ESRI immediately (so map isn't blank), then upgrade to Google when ready
-    addEsriDefault()
-
-    // Try upgrading to Google immediately if API is already loaded
-    if ((window as any).google?.maps?.Map) {
-      upgradeToGoogle()
-    } else {
-      // Retry every 2 seconds for up to 30 seconds (Google script can be slow)
-      let retryCount = 0
-      const retryInterval = setInterval(() => {
-        retryCount++
-        if ((window as any).google?.maps?.Map && mapRef.current && imagerySourceRef.current === 'esri') {
-          clearInterval(retryInterval)
-          console.log(`Google Maps API loaded after ${retryCount * 2}s — upgrading from ESRI`)
-          upgradeToGoogle()
-        } else if (retryCount >= 15) {
-          clearInterval(retryInterval)
-          console.warn('Google Maps API did not load after 30s — staying on ESRI satellite')
-        }
-      }, 2000)
-    }
+    // Add ESRI satellite as default — always available, always works
+    const { url: esriUrl, attribution: esriAttrib } = TILE_LAYERS.esri
+    const esriLayer = L.tileLayer(esriUrl, { attribution: esriAttrib, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
+    esriLayer.addTo(map)
+    tileLayerRef.current = esriLayer
+    setImagerySource('esri')
+    console.log('ESRI Satellite loaded as default aerial imagery')
 
     // Create custom pane for bright street labels (higher z-index)
     map.createPane('labelsPane')
@@ -527,7 +480,7 @@ export function Map({
 
     // Add street labels overlay - CartoDB light_only_labels
     // White text designed for dark/satellite backgrounds
-    const streetLabelsLayer = L.tileLayer(CARTO_LABELS_URL, {
+    const streetLabelsLayer = L.tileLayer(CARTO_DARK_LABELS_URL, {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       maxNativeZoom: 18,
       maxZoom: 22,
