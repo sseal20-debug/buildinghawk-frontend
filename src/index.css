@@ -310,7 +310,7 @@ body {
 }
 
 /* Labels pane - invert dark labels to bright white for satellite backgrounds */
-.leaflet-pane.labelsPane img,
+.leaflet-labelsPane-pane img,
 .bright-labels-layer img {
   filter: invert(1) brightness(2.5) contrast(2) !important;
 }

@@ -468,6 +468,7 @@ export function Map({
     map.createPane('labelsPane')
     map.getPane('labelsPane')!.style.zIndex = '650'
     map.getPane('labelsPane')!.style.pointerEvents = 'none'
+    map.getPane('labelsPane')!.style.filter = 'invert(1) brightness(2.5) contrast(2)'
 
     // Add street labels overlay - CartoDB dark_only_labels + CSS invert = bright white
     // Dark text gets inverted to white via CSS filter on labelsPane
