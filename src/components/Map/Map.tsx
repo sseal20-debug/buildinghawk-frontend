@@ -47,14 +47,10 @@ const OC_BOUNDS: L.LatLngBoundsExpression = [
 const NORTH_OC_CENTER: L.LatLngExpression = [33.84, -117.89]
 const DEFAULT_ZOOM = 13
 
-type ImagerySource = 'osm' | 'esri' | 'google'
+type ImagerySource = 'esri' | 'google'
 
-// Tile layer URLs (Google uses GoogleMutant plugin, not standard tile URL)
-const TILE_LAYERS: Record<string, { url: string; attribution: string }> = {
-  osm: {
-    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-  },
+// Tile layer URLs — satellite only (Google HD via GoogleMutant plugin, ESRI as fallback)
+const TILE_LAYERS = {
   esri: {
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     attribution: '&copy; Esri, Maxar, Earthstar Geographics',
@@ -413,33 +409,28 @@ export function Map({
       return
     }
 
-    // ESRI or OSM tile layers
-    const { url, attribution } = TILE_LAYERS[source as 'osm' | 'esri']
-    const isEsri = source === 'esri'
+    // ESRI satellite fallback (only non-Google satellite option)
+    const { url, attribution } = TILE_LAYERS.esri
     const newTileLayer = L.tileLayer(url, {
       attribution,
-      ...(isEsri ? { maxNativeZoom: 19, maxZoom: 22 } : { maxZoom: 19 }),
-      detectRetina: isEsri,
+      maxNativeZoom: 19,
+      maxZoom: 22,
+      detectRetina: true,
     })
     newTileLayer.addTo(map)
     tileLayerRef.current = newTileLayer
 
-    // Re-add street labels on top (if zoomed in enough and using satellite imagery)
-    const isSatellite = source === 'esri'
-    if (isSatellite && streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
+    // Re-add street labels on top (satellite imagery always needs labels)
+    if (streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
       if (!map.hasLayer(streetLabelsLayerRef.current)) {
         streetLabelsLayerRef.current.addTo(map)
       }
       if (parcelLayerRef.current) {
         parcelLayerRef.current.bringToFront()
       }
-    } else if (source === 'osm' && streetLabelsLayerRef.current) {
-      if (map.hasLayer(streetLabelsLayerRef.current)) {
-        map.removeLayer(streetLabelsLayerRef.current)
-      }
     }
 
-    setImagerySource(source)
+    setImagerySource('esri')
   }, [])
 
   // Initialize map
@@ -1790,8 +1781,8 @@ export function Map({
           className="absolute top-4 left-16 z-[1000] px-5 py-3 bg-gradient-to-br from-gray-700 to-gray-900 rounded-xl shadow-xl text-base font-bold text-white hover:from-gray-600 hover:to-gray-800 transition-all flex items-center gap-2 border border-gray-500/30"
           style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
         >
-          <span>🗺️</span>
-          <span>Back to 2D Map</span>
+          <span>🛰️</span>
+          <span>Back to Satellite</span>
         </button>
       )}
 
