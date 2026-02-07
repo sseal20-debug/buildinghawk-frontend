@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { parcelsApi, roadsApi, type PropertyMarker, type ParcelUnit, type RoadGeometry, type CompanyLabel } from '@/api/client'
+import { parcelsApi, roadsApi, type PropertyMarker, type ParcelUnit, type RoadGeometry, type CompanyLabel, type ListingMarker } from '@/api/client'
 import type { Parcel, ParcelFeature, CRMEntity } from '@/types'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -35,6 +35,10 @@ interface MapProps {
   quickFilter?: string | null
   // Active layer name for badge display
   activeLayerName?: string
+  // Listing markers for map overlay
+  listingMarkers?: ListingMarker[]
+  onListingMarkerClick?: (listing: ListingMarker) => void
+  listingColorBy?: 'deal' | 'type' | 'city'
 }
 
 // Orange County bounds - expanded for better panning
@@ -138,6 +142,9 @@ export function Map({
   quickFilter = null,
   onMapReady,
   activeLayerName = 'New Listings/Updates',
+  listingMarkers,
+  onListingMarkerClick,
+  listingColorBy = 'deal',
 }: MapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -155,6 +162,7 @@ export function Map({
   const roadNameLabelsLayerRef = useRef<L.LayerGroup | null>(null)
   const companyLabelLayerRef = useRef<L.LayerGroup | null>(null)
   const selectedParcelsLayerRef = useRef<L.LayerGroup | null>(null)
+  const listingLayerRef = useRef<L.LayerGroup | null>(null)
   const drawnItemsRef = useRef<L.FeatureGroup | null>(null)
   const drawControlRef = useRef<L.Control.Draw | null>(null)
   const shieldContainerRef = useRef<HTMLDivElement | null>(null)
@@ -576,6 +584,11 @@ export function Map({
     const selectedParcelsLayer = L.layerGroup()
     selectedParcelsLayer.addTo(map)
     selectedParcelsLayerRef.current = selectedParcelsLayer
+
+    // Create listing marker layer
+    const listingLayer = L.layerGroup()
+    listingLayer.addTo(map)
+    listingLayerRef.current = listingLayer
 
     // Road overlays and labels will be added dynamically via useEffect when roadGeometryData loads
 
@@ -1588,6 +1601,88 @@ export function Map({
       })
     }
   }, [parcelUnitsData, parcelsData, currentZoom]) // Re-render when data or zoom changes
+
+  // Handle listing markers layer
+  useEffect(() => {
+    const layer = listingLayerRef.current
+    if (!layer) return
+
+    // Clear existing markers
+    layer.clearLayers()
+
+    if (!listingMarkers || listingMarkers.length === 0) return
+
+    // Simple string hash for city-based coloring
+    const hashStr = (s: string): number => {
+      let h = 0
+      for (let i = 0; i < s.length; i++) {
+        h = ((h << 5) - h + s.charCodeAt(i)) | 0
+      }
+      return Math.abs(h)
+    }
+
+    const getColor = (listing: ListingMarker): string => {
+      switch (listingColorBy) {
+        case 'deal': {
+          const lt = (listing.listing_type || '').toLowerCase()
+          if (lt.includes('sale')) return '#2563eb'
+          if (lt.includes('lease')) return '#16a34a'
+          if (lt.includes('sold')) return '#6b7280'
+          return '#6b7280'
+        }
+        case 'type': {
+          const pt = (listing.property_type || '').toLowerCase()
+          if (pt.includes('industrial')) return '#0d9488'
+          if (pt.includes('flex') || pt.includes('r&d')) return '#be185d'
+          if (pt.includes('land')) return '#7c3aed'
+          return '#ea580c'
+        }
+        case 'city': {
+          const hue = hashStr(listing.city || 'unknown') % 360
+          return `hsl(${hue}, 70%, 50%)`
+        }
+        default:
+          return '#2563eb'
+      }
+    }
+
+    listingMarkers.forEach((listing) => {
+      const lat = listing.latitude
+      const lng = listing.longitude
+      if (!lat || !lng) return
+
+      const color = getColor(listing)
+
+      const marker = L.circleMarker([lat, lng], {
+        radius: 8,
+        color: color,
+        fillColor: color,
+        weight: 2,
+        fillOpacity: 0.8,
+      })
+
+      // Add permanent SF label tooltip
+      const sf = listing.sf
+      if (sf && sf > 0) {
+        const sfLabel = sf >= 1000 ? `${(sf / 1000).toFixed(sf >= 10000 ? 0 : 1)}k SF` : `${sf.toLocaleString()} SF`
+        marker.bindTooltip(sfLabel, {
+          permanent: true,
+          direction: 'top',
+          className: 'listing-sf-label',
+          offset: [0, -6],
+        })
+      }
+
+      marker.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e)
+        if (onListingMarkerClick) {
+          onListingMarkerClick(listing)
+        }
+      })
+
+      layer.addLayer(marker)
+    })
+  }, [listingMarkers, listingColorBy])
 
   // Handle polygon draw events with current drawMode
   useEffect(() => {

@@ -16,6 +16,8 @@ import { FullSearchPage } from "./components/Search/FullSearchPage"
 import type { QuickFilter } from "./components/Search/TopSearchBar"
 import L from 'leaflet'
 import { DocumentDrawer } from "./components/DocumentDrawer"
+import ListingDetailDrawer from "./components/Listings/ListingDetailDrawer"
+import { NotificationSettings } from "./components/Notifications/NotificationSettings"
 import { CompsSearch } from "./components/Comps"
 import { TenantsSearch } from "./components/Tenants"
 import { HotsheetPanel } from "./components/Hotsheet"
@@ -25,7 +27,8 @@ import { VacantPanel, ClientsPanel, CondosPanel, StatsPanel } from "./components
 import { LoginView } from "./pages/LoginView"
 import { PropertyContextMenu, type ContextMenuAction } from "./components/Map/PropertyContextMenu"
 import { PropertyCard } from "./components/Map/PropertyCard"
-import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi } from "./api/client"
+import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMapApi } from "./api/client"
+import type { ListingMarker } from "./api/client"
 import { useDebounce } from "./hooks/useDebounce"
 import type { Parcel, SearchCriteria, SearchResultCollection, SavedSearch, CRMEntity } from "./types"
 import type { UserSession } from "./styles/theme"
@@ -174,7 +177,7 @@ function FilterTab({
   )
 }
 
-type PanelView = "none" | "search" | "results" | "save-search" | "saved-searches" | "alerts" | "sale-alerts" | "explorer" | "crm" | "comps" | "hotsheet" | "emails" | "tenants" | "warn" | "vacant" | "clients" | "condos" | "stats" | "owners" | "requirements" | "investors" | "address" | "type" | "offmarket"
+type PanelView = "none" | "search" | "results" | "save-search" | "saved-searches" | "alerts" | "sale-alerts" | "explorer" | "crm" | "comps" | "hotsheet" | "emails" | "tenants" | "warn" | "vacant" | "clients" | "condos" | "stats" | "owners" | "requirements" | "investors" | "address" | "type" | "offmarket" | "notifications"
 
 // CRM Dropdown Panel with Prospects/Clients/Properties/Land checkboxes
 function CRMDropdownPanel({
@@ -625,6 +628,8 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   const [showClassifier, setShowClassifier] = useState(false)
   const [showTenantLabels, setShowTenantLabels] = useState(false)
   const mapComponentRef = useRef<{ getMap: () => L.Map | null } | null>(null)
+  const [selectedListing, setSelectedListing] = useState<ListingMarker | null>(null)
+  const [listingColorBy, setListingColorBy] = useState<'deal' | 'type' | 'city'>('deal')
   const [prospectFilter, setProspectFilter] = useState<Partial<CRMProspectFilter>>({})
   const [prospectFilterMenuPos, setProspectFilterMenuPos] = useState<{ x: number; y: number } | null>(null)
   // (CRM dropdown removed - now in sidebar)
@@ -674,6 +679,16 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     queryFn: crmPropertiesApi.getCompanyLabels,
     enabled: showTenantLabels,
     staleTime: 1000 * 60 * 10, // 10 minutes
+  })
+
+  // Query for listing markers (inventory map layer)
+  const { data: listingMarkersData } = useQuery({
+    queryKey: ['listing-markers', quickFilter],
+    queryFn: () => listingsMapApi.getMarkers({
+      type: quickFilter === 'sale' ? 'sale' : quickFilter === 'lease' ? 'lease' : undefined,
+      status: quickFilter === 'sold' ? 'sold' : quickFilter === 'leased' ? 'leased' : quickFilter === 'escrow' ? 'escrow' : undefined,
+    }),
+    staleTime: 1000 * 60 * 5,
   })
 
   // Debounce the search query for street parcel highlighting (avoid hammering API)
@@ -970,7 +985,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             // Market Intelligence
             distressed: 'warn',
             // Tools & Settings
-            alerts: 'alerts',
+            alerts: 'notifications',
             crm: 'explorer',
             stats: 'stats',
           }
@@ -1046,6 +1061,9 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             landMarkers={showLand ? landData : undefined}
             companyLabels={showTenantLabels ? companyLabelsData : undefined}
             quickFilter={quickFilter}
+            listingMarkers={listingMarkersData?.markers}
+            onListingMarkerClick={(listing) => setSelectedListing(listing)}
+            listingColorBy={listingColorBy}
             onMapReady={(map) => {
               mapComponentRef.current = { getMap: () => map }
             }}
@@ -1099,7 +1117,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         {/* Side Panel (overlays from right) */}
         {panelView !== "none" && (
           <div className={`absolute top-0 right-0 bottom-0 bg-navy-dark shadow-xl z-20 flex flex-col border-l border-navy-light ${
-            panelView === "explorer" || panelView === "comps" || panelView === "tenants" ? "w-full sm:w-[900px]" : "w-full sm:w-96"
+            panelView === "explorer" || panelView === "comps" || panelView === "tenants" ? "w-full sm:w-[900px]" : panelView === "notifications" ? "w-full sm:w-[480px]" : "w-full sm:w-96"
           }`}>
             {panelView === "search" && (
               <SearchPanel
@@ -1236,6 +1254,10 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             {panelView === "stats" && (
               <StatsPanel onClose={closePanel} />
             )}
+
+            {panelView === "notifications" && (
+              <NotificationSettings onClose={closePanel} />
+            )}
           </div>
         )}
 
@@ -1244,6 +1266,12 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           address={docDrawerAddress}
           isOpen={isDocDrawerOpen}
           onClose={() => setIsDocDrawerOpen(false)}
+        />
+
+        {/* Listing Detail Drawer */}
+        <ListingDetailDrawer
+          listing={selectedListing}
+          onClose={() => setSelectedListing(null)}
         />
 
         {/* Prospect Filter Right-Click Menu */}

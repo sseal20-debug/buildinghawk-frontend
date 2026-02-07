@@ -1646,3 +1646,141 @@ export const warnAlertsApi = {
   getById: (id: string) =>
     request<WarnAlert>(`/warn-alerts/${id}`),
 };
+
+// ---------------------------------------------------------------------------
+// Listing Map Markers
+// ---------------------------------------------------------------------------
+export interface ListingMarker {
+  id: string;
+  address: string;
+  city: string;
+  latitude: number;
+  longitude: number;
+  sf: number | null;
+  land_sf: number | null;
+  acres: number | null;
+  listing_type: string;
+  property_type: string | null;
+  status: string;
+  rate_monthly: number | null;
+  rate_display: string | null;
+  sale_price: number | null;
+  price_psf: number | null;
+  dom: number | null;
+  photo_url: string | null;
+  lease_structure: string | null;
+  nnn_psf_monthly: number | null;
+  nnn_to_gross_total: number | null;
+  listing_page_url: string | null;
+  listed_app: string | null;
+  listing_broker: string | null;
+  listing_company: string | null;
+  is_new: boolean;
+  is_price_reduced: boolean;
+  notes: string | null;
+  clear_height: string | null;
+  dock_doors: number | null;
+  grade_doors: number | null;
+  power: string | null;
+  has_yard: boolean | null;
+  buyer_company: string | null;
+  seller_company: string | null;
+  cap_rate: number | null;
+  sale_date: string | null;
+  year_built: number | null;
+}
+
+export interface ListingMapFilters {
+  type?: string;
+  status?: string;
+  city?: string;
+  min_sf?: number;
+  property_type?: string;
+}
+
+export const listingsMapApi = {
+  getMarkers: (filters?: ListingMapFilters) => {
+    const params = new URLSearchParams();
+    if (filters) {
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== 'all') {
+          params.append(key, String(value));
+        }
+      });
+    }
+    const qs = params.toString();
+    return request<{ markers: ListingMarker[]; total: number }>(`/listings/map${qs ? '?' + qs : ''}`);
+  },
+
+  getCities: () =>
+    request<{ cities: { city: string; count: number }[] }>('/listings/cities'),
+
+  getById: (id: string) =>
+    request<ListingMarker>(`/listings/${id}`),
+};
+
+// ---------------------------------------------------------------------------
+// Notifications API
+// ---------------------------------------------------------------------------
+export interface NotificationConfig {
+  id: string;
+  channel: 'email' | 'sms';
+  destination: string;
+  alert_types: string[];
+  is_enabled: boolean;
+  min_sf: number | null;
+  cities: string[] | null;
+  property_types: string[] | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationLogEntry {
+  id: number;
+  config_id: string;
+  channel: string;
+  destination: string;
+  subject: string | null;
+  body: string | null;
+  listing_id: string | null;
+  alert_type: string;
+  status: string;
+  error_message: string | null;
+  sent_at: string | null;
+  created_at: string;
+}
+
+export const notificationsApi = {
+  getConfigs: () =>
+    request<{ configs: NotificationConfig[] }>('/notifications/config'),
+
+  createConfig: (data: Partial<NotificationConfig>) =>
+    request<NotificationConfig>('/notifications/config', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateConfig: (id: string, data: Partial<NotificationConfig>) =>
+    request<NotificationConfig>(`/notifications/config/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteConfig: (id: string) =>
+    request<{ deleted: boolean }>(`/notifications/config/${id}`, { method: 'DELETE' }),
+
+  getLog: (limit?: number) =>
+    request<{ log: NotificationLogEntry[] }>(`/notifications/log?limit=${limit || 50}`),
+
+  sendTest: (data?: { config_id?: string; channel?: string; destination?: string }) =>
+    request<{ test: boolean; results?: unknown[] }>('/notifications/test', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    }),
+
+  trigger: (checkTypes?: string[]) =>
+    request<{ triggered: boolean; results: Record<string, string> }>('/notifications/trigger', {
+      method: 'POST',
+      body: JSON.stringify({ check_types: checkTypes }),
+    }),
+};
