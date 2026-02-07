@@ -1382,11 +1382,19 @@ export interface BuildingSearchResult {
   zoning: string | null;
   latitude: number;
   longitude: number;
+  // Spec data (aggregated from units)
+  clear_height_ft: number | null;
+  dock_doors: number;
+  gl_doors: number;
+  power_amps: number | null;
+  fenced_yard: boolean;
+  // Listing match
   listing_type: string | null;
   listing_status: string | null;
   listing_rate: number | null;
   listing_price: number | null;
   broker_name: string | null;
+  // CRM notes
   owner_name: string | null;
   land_use: string | null;
   last_sale_price: number | null;

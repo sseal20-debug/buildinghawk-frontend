@@ -353,11 +353,14 @@ export function FullSearchPage({ sidebarOpen, onNavigateToProperty, onClose }: F
                   <th onClick={() => handleSort('address')} className="fsp-th-sortable">Address{sortArrow('address')}</th>
                   <th onClick={() => handleSort('city')} className="fsp-th-sortable">City{sortArrow('city')}</th>
                   <th onClick={() => handleSort('building_sf')} className="fsp-th-sortable fsp-th-right">Bldg SF{sortArrow('building_sf')}</th>
-                  <th onClick={() => handleSort('lot_sf')} className="fsp-th-sortable fsp-th-right">Lot SF{sortArrow('lot_sf')}</th>
+                  <th className="fsp-th-right">Clear Ht</th>
+                  <th className="fsp-th-right">Docks</th>
+                  <th className="fsp-th-right">GL</th>
+                  <th className="fsp-th-right">Power</th>
+                  <th>Yard</th>
                   <th>Status</th>
                   <th className="fsp-th-right">Rate / Price</th>
                   <th>Owner</th>
-                  <th>Type</th>
                   <th onClick={() => handleSort('year_built')} className="fsp-th-sortable fsp-th-right">Year{sortArrow('year_built')}</th>
                 </tr>
               </thead>
@@ -375,7 +378,11 @@ export function FullSearchPage({ sidebarOpen, onNavigateToProperty, onClose }: F
                     <td className="fsp-td-address">{r.address || '--'}</td>
                     <td>{r.city || '--'}</td>
                     <td className="fsp-td-right">{formatNumber(r.building_sf)}</td>
-                    <td className="fsp-td-right">{formatNumber(r.lot_sf)}</td>
+                    <td className="fsp-td-right">{r.clear_height_ft ? `${r.clear_height_ft}'` : '--'}</td>
+                    <td className="fsp-td-right">{r.dock_doors || '--'}</td>
+                    <td className="fsp-td-right">{r.gl_doors || '--'}</td>
+                    <td className="fsp-td-right">{r.power_amps ? `${r.power_amps}A` : '--'}</td>
+                    <td>{r.fenced_yard ? 'Yes' : '--'}</td>
                     <td>
                       {r.listing_type ? (
                         <span className={`fsp-status fsp-status-${r.listing_status || r.listing_type}`}>
@@ -387,7 +394,6 @@ export function FullSearchPage({ sidebarOpen, onNavigateToProperty, onClose }: F
                       {r.listing_rate ? `$${r.listing_rate}/SF` : r.listing_price ? formatCurrency(r.listing_price) : r.last_sale_price ? formatCurrency(r.last_sale_price) : '--'}
                     </td>
                     <td className="fsp-td-owner">{r.owner_name || '--'}</td>
-                    <td className="fsp-td-type">{r.land_use || '--'}</td>
                     <td className="fsp-td-right">{r.year_built || '--'}</td>
                   </tr>
                 ))}
