@@ -735,6 +735,8 @@ export function Map({
           const match = cleaned.match(/(\d+)/)
           if (!match) return
           const routeNum = match[1]
+          // Only show shields for known OC freeways — skip routes outside our area (15, 60, 71, 105, 605, etc.)
+          if (!FREEWAY_NAMES[routeNum]) return
           const isInterstate = cleaned.startsWith('I ') || cleaned.startsWith('I-')
 
           if (!freewaySegments[routeNum]) {
@@ -1795,7 +1797,7 @@ export function Map({
               {/* Freeway name label above shield */}
               <div className="freeway-name-label">{s.name}</div>
               {/* Shield icon */}
-              <div className={`freeway-shield freeway-shield-sm ${s.isInterstate ? 'interstate' : 'ca-state'}`}>
+              <div className={`freeway-shield ${s.isInterstate ? 'interstate' : 'ca-state'}`}>
                 <div className="shield-inner">{s.routeNum}</div>
               </div>
             </div>

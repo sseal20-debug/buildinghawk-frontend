@@ -333,7 +333,6 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.7));
 }
 
 .freeway-shield.interstate::before {
@@ -376,7 +375,6 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 1px 3px rgba(0,0,0,0.7));
 }
 
 /* Outer green border */
