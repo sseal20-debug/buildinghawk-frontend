@@ -1006,8 +1006,15 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
 
       {/* Full-Screen Search Page (replaces map when active) */}
       {viewState.type === 'search-fullscreen' && (
-        <div className="flex-1 relative z-0 min-w-0 h-full overflow-hidden">
+        <div
+          className="flex-1 relative z-0 min-w-0 h-full overflow-hidden"
+          style={{
+            marginLeft: sidebarOpen ? 280 : 0,
+            transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        >
           <FullSearchPage
+            sidebarOpen={sidebarOpen}
             onNavigateToProperty={(lat, lng, apn) => {
               setViewState({ type: 'map' })
               setPanelView('none')
