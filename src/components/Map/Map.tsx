@@ -96,12 +96,13 @@ const LABEL_COLORS = {
 // Subject property address to highlight in RED
 const SUBJECT_PROPERTY_ADDRESS = '1193 N Blue Gum St'
 
-// Road overlay colors by type - BRIGHT VIVID colors visible over satellite imagery
+// Road overlay styles — refined for professional satellite view
+// Thinner, more transparent = lets satellite imagery show through
 const ROAD_OVERLAY_STYLES = {
-  freeway: { color: '#FF6600', weight: 8, opacity: 0.85 },        // Vivid orange - thick
-  highway: { color: '#FF8800', weight: 5, opacity: 0.75 },        // Orange (ramps/links)
-  primary: { color: '#00E5FF', weight: 4, opacity: 0.7 },         // Bright cyan/aqua
-  secondary: { color: '#00BCD4', weight: 3, opacity: 0.6 },       // Teal
+  freeway: { color: '#FF7A00', weight: 5, opacity: 0.65 },        // Warm orange
+  highway: { color: '#FF9500', weight: 3, opacity: 0.55 },        // Light orange (ramps)
+  primary: { color: '#4DD0E1', weight: 2.5, opacity: 0.5 },       // Soft cyan
+  secondary: { color: '#26A69A', weight: 2, opacity: 0.4 },       // Muted teal
 }
 
 // Freeway name lookup for tooltip display
@@ -862,8 +863,9 @@ export function Map({
 
         // Use RED for subject property, AQUA BLUE for others
         const parcelColor = isSubjectProperty ? PARCEL_COLORS.subject : PARCEL_COLORS.default
-        const parcelWeight = isSubjectProperty ? 4 : 3
-        const parcelFillOpacity = isSubjectProperty ? 0.35 : 0.25
+        const parcelWeight = isSubjectProperty ? 2.5 : 1.5
+        const parcelFillOpacity = isSubjectProperty ? 0.25 : 0.12
+        const parcelStrokeOpacity = isSubjectProperty ? 0.9 : 0.7
 
         const layer = L.geoJSON({
           type: 'Feature',
@@ -873,7 +875,7 @@ export function Map({
           style: () => ({
             color: parcelColor,
             weight: parcelWeight,
-            opacity: 1,
+            opacity: parcelStrokeOpacity,
             fillColor: parcelColor,
             fillOpacity: parcelFillOpacity,
           }),
