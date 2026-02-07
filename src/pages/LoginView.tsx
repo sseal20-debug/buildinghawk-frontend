@@ -55,7 +55,8 @@ export function LoginView({ onLogin }: LoginViewProps) {
 
     try {
       // Validate password against backend
-      const res = await fetch('/api/auth/check', {
+      const apiUrl = import.meta.env.VITE_API_URL || ''
+      const res = await fetch(`${apiUrl}/api/auth/check`, {
         headers: { 'x-api-key': password.trim() },
       })
 
