@@ -309,9 +309,182 @@ body {
   transform-origin: center center;
 }
 
-/* Labels pane - bold black text on white backdrop */
+/* Labels pane - bright white text for satellite backgrounds */
 .leaflet-pane.labelsPane img {
-  filter: contrast(2.5) brightness(1.1);
+  filter: brightness(2) contrast(1.8);
+}
+
+/* ==============================================
+   FREEWAY SHIELD MARKERS
+   California Interstate and State Route shields
+   Real MUTCD / CalTrans shield shapes
+   ============================================== */
+
+.freeway-shield-container {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Interstate shield (I-5, I-405) — real blue/red/white hexagon badge */
+.freeway-shield.interstate {
+  width: 32px;
+  height: 32px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.freeway-shield.interstate::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: #003399;
+  clip-path: polygon(
+    50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%
+  );
+  border: 2px solid white;
+}
+
+.freeway-shield.interstate::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  width: 90%;
+  height: 35%;
+  background: #BF0A30;
+  clip-path: polygon(10% 0%, 90% 0%, 100% 100%, 0% 100%);
+}
+
+.freeway-shield.interstate .shield-inner {
+  color: white;
+  font-weight: 900;
+  font-size: 14px;
+  font-family: 'Highway Gothic', 'Arial Black', sans-serif;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+  z-index: 1;
+  letter-spacing: -0.5px;
+}
+
+/* California State Route shield (91, 57, 22, 55) — green spade/poppy shape */
+.freeway-shield.ca-state {
+  width: 30px;
+  height: 34px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Outer green border */
+.freeway-shield.ca-state::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: #006B54;
+  clip-path: polygon(
+    50% 0%,
+    85% 5%,
+    100% 20%,
+    100% 55%,
+    85% 80%,
+    50% 100%,
+    15% 80%,
+    0% 55%,
+    0% 20%,
+    15% 5%
+  );
+}
+
+/* Inner dark green fill (like real CA highway signs — green bg, white text) */
+.freeway-shield.ca-state::after {
+  content: '';
+  position: absolute;
+  width: 85%;
+  height: 85%;
+  background: rgba(0, 107, 84, 0.9);
+  clip-path: polygon(
+    50% 0%,
+    85% 5%,
+    100% 20%,
+    100% 55%,
+    85% 80%,
+    50% 100%,
+    15% 80%,
+    0% 55%,
+    0% 20%,
+    15% 5%
+  );
+}
+
+.freeway-shield.ca-state .shield-inner {
+  color: white;
+  font-weight: 900;
+  font-size: 14px;
+  font-family: 'Highway Gothic', 'Arial Black', sans-serif;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.8);
+  z-index: 1;
+  letter-spacing: -0.5px;
+  margin-top: 1px;
+}
+
+/* Freeway name label (React DOM overlay — viewport-clamped) */
+.freeway-name-label {
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: 'Arial', 'Helvetica Neue', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  text-shadow:
+    1px 1px 3px rgba(0,0,0,0.95),
+    -1px -1px 3px rgba(0,0,0,0.95),
+    1px -1px 3px rgba(0,0,0,0.95),
+    -1px 1px 3px rgba(0,0,0,0.95),
+    0 0 6px rgba(0,0,0,0.8);
+  white-space: nowrap;
+  text-align: center;
+  margin-bottom: 1px;
+  pointer-events: none;
+}
+
+/* Freeway name tooltip (on hover - legacy) */
+.freeway-tooltip {
+  background: rgba(0, 0, 0, 0.85) !important;
+  color: white !important;
+  border: 1px solid #FFD700 !important;
+  border-radius: 4px !important;
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Permanent freeway name labels - white text, visible on orange overlay */
+.freeway-name-tooltip {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: white !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  font-family: 'Arial', 'Helvetica Neue', sans-serif !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1.5px !important;
+  text-shadow:
+    2px 2px 4px rgba(0,0,0,0.9),
+    -2px -2px 4px rgba(0,0,0,0.9),
+    2px -2px 4px rgba(0,0,0,0.9),
+    -2px 2px 4px rgba(0,0,0,0.9),
+    0 0 8px rgba(0,0,0,0.7) !important;
+  white-space: nowrap !important;
+  padding: 0 !important;
+}
+.freeway-name-tooltip::before {
+  display: none !important;
 }
 
 /* ==============================================
@@ -387,23 +560,8 @@ body {
    Semi-transparent overlay along major roads
    ============================================== */
 
-/* Freeway overlay - semi-transparent dark band */
-.freeway-overlay {
-  stroke: rgba(0, 0, 0, 0.4) !important;
-  stroke-width: 40px !important;
-  fill: none !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-}
-
-/* Street overlay - lighter transparency */
-.street-overlay {
-  stroke: rgba(0, 0, 0, 0.25) !important;
-  stroke-width: 20px !important;
-  fill: none !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-}
+/* LEGACY: Dark overlays removed - now using bright colored polylines via JS
+   Freeway = vivid orange (#FF6600), Primary = bright cyan (#00E5FF) */
 
 /* Major road label background */
 .road-label-bg {
@@ -417,136 +575,6 @@ body {
   letter-spacing: 1px;
 }
 
-/* ==============================================
-   FREEWAY SHIELD MARKERS
-   California Interstate and State Route shields
-   Official CA spade/poppy shape design
-   ============================================== */
-
-.freeway-shield-container {
-  background: transparent !important;
-  border: none !important;
-}
-
-/* Interstate shield (red/white/blue) - proper shield shape */
-.freeway-shield.interstate {
-  width: 36px;
-  height: 36px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-}
-
-.freeway-shield.interstate::before {
-  content: '';
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  background: #003399;
-  clip-path: polygon(
-    50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%
-  );
-  border: 2px solid white;
-}
-
-.freeway-shield.interstate::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  width: 90%;
-  height: 35%;
-  background: #BF0A30;
-  clip-path: polygon(10% 0%, 90% 0%, 100% 100%, 0% 100%);
-}
-
-.freeway-shield.interstate .shield-inner {
-  color: white;
-  font-weight: 900;
-  font-size: 16px;
-  font-family: 'Highway Gothic', 'Arial Black', sans-serif;
-  text-shadow: 1px 1px 1px rgba(0,0,0,0.8);
-  z-index: 1;
-  letter-spacing: -1px;
-}
-
-/* California State Route shield - OFFICIAL SPADE/POPPY SHAPE */
-/* White background with green border, proper CA shape */
-.freeway-shield.ca-state {
-  width: 34px;
-  height: 40px;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
-}
-
-/* Outer green border */
-.freeway-shield.ca-state::before {
-  content: '';
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  background: #006B54;
-  clip-path: polygon(
-    50% 0%,
-    85% 5%,
-    100% 20%,
-    100% 55%,
-    85% 80%,
-    50% 100%,
-    15% 80%,
-    0% 55%,
-    0% 20%,
-    15% 5%
-  );
-}
-
-/* Inner white fill */
-.freeway-shield.ca-state::after {
-  content: '';
-  position: absolute;
-  width: 85%;
-  height: 85%;
-  background: white;
-  clip-path: polygon(
-    50% 0%,
-    85% 5%,
-    100% 20%,
-    100% 55%,
-    85% 80%,
-    50% 100%,
-    15% 80%,
-    0% 55%,
-    0% 20%,
-    15% 5%
-  );
-}
-
-.freeway-shield.ca-state .shield-inner {
-  color: #000000;
-  font-weight: 900;
-  font-size: 18px;
-  font-family: 'Highway Gothic', 'Arial Black', sans-serif;
-  z-index: 1;
-  letter-spacing: -1px;
-  margin-top: 2px;
-}
-
-/* Freeway name tooltip */
-.freeway-tooltip {
-  background: rgba(0, 0, 0, 0.85) !important;
-  color: white !important;
-  border: 1px solid #FFD700 !important;
-  border-radius: 4px !important;
-  padding: 4px 10px !important;
-  font-size: 12px !important;
-  font-weight: 600 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.5px !important;
-}
 
 .freeway-tooltip::before {
   border-top-color: #FFD700 !important;
@@ -593,22 +621,8 @@ body {
    Semi-transparent white bands along freeways and major roads
    ============================================== */
 
-/* Freeway overlay line - wider, more prominent */
-.freeway-overlay-line {
-  stroke: rgba(255, 255, 255, 0.5) !important;
-  stroke-width: 25px !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.3));
-}
-
-/* Major road overlay line - narrower */
-.road-overlay-line {
-  stroke: rgba(255, 255, 255, 0.35) !important;
-  stroke-width: 12px !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-}
+/* LEGACY: Overlay line CSS classes removed - road styling now handled via JS polylines
+   with vivid orange/cyan colors and per-type opacity */
 
 /* Road overlay pane styling */
 .leaflet-pane.roadOverlayPane {
@@ -822,4 +836,124 @@ body {
 }
 @media (max-width: 900px) {
   .left-sidebar-responsive { width: 220px !important; }
+}
+
+
+/* ==============================================
+   RETRACTABLE SIDEBAR + TOP SEARCH BAR
+   ============================================== */
+
+/* Sidebar panel - slides in/out */
+.sidebar-panel {
+  width: 280px;
+  background: white;
+  border-right: 1px solid #e5e7eb;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 2px 0 12px rgba(0,0,0,0.08);
+  z-index: 1002;
+  flex-shrink: 0;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 48px;
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+              opacity 0.3s ease;
+  overflow: hidden;
+}
+
+.sidebar-open {
+  transform: translateX(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.sidebar-closed {
+  transform: translateX(-110%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Hide collapsed strip when sidebar is open */
+.sidebar-strip-hidden {
+  /* keep visible but shift content */
+}
+
+/* Backdrop overlay for mobile */
+.sidebar-backdrop {
+  display: none;
+}
+
+/* Top floating search bar */
+.top-search-bar {
+  position: absolute;
+  top: 14px;
+  left: 296px;
+  right: 14px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.top-search-bar > * {
+  pointer-events: auto;
+}
+
+/* ---- MOBILE (< 768px) ---- */
+@media (max-width: 767px) {
+  .sidebar-panel {
+    position: fixed;
+    left: 0;
+    width: 280px;
+    z-index: 1100;
+    box-shadow: 4px 0 20px rgba(0,0,0,0.25);
+  }
+
+  .sidebar-collapsed-strip {
+    width: 44px !important;
+    padding-top: 8px !important;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 1099;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .top-search-bar {
+    left: 56px !important;
+    right: 10px;
+  }
+}
+
+/* ---- TABLET (768-1024) ---- */
+@media (min-width: 768px) and (max-width: 1024px) {
+  .sidebar-panel {
+    width: 260px;
+  }
+}
+
+
+/* On mobile, stack filters below search */
+@media (max-width: 767px) {
+  .top-search-bar {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .top-search-bar > .relative {
+    width: 100% !important;
+  }
+  .quick-filter-row {
+    margin-left: 0 !important;
+    gap: 4px !important;
+  }
+  .quick-filter-row button {
+    padding: 4px 8px !important;
+    font-size: 10px !important;
+  }
 }

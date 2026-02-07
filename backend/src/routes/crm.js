@@ -1,8 +1,79 @@
 import { Router } from 'express';
 import { query } from '../db/connection.js';
 import { z } from 'zod';
+import fs from 'fs';
+import path from 'path';
 
 const router = Router();
+
+// --- File-based client data (from Dropbox scraper) ---
+const CLIENTS_JSON_PATH = 'D:\\BuildingHawk_Master\\clients_master.json';
+
+let clientsCache = null;
+let clientsCacheTimestamp = 0;
+const CLIENTS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function loadClientsData() {
+  const now = Date.now();
+  if (clientsCache && (now - clientsCacheTimestamp) < CLIENTS_CACHE_TTL) {
+    return clientsCache;
+  }
+  if (!fs.existsSync(CLIENTS_JSON_PATH)) {
+    return null;
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(CLIENTS_JSON_PATH, 'utf8'));
+    clientsCache = raw;
+    clientsCacheTimestamp = now;
+    console.log(`[CRM] Loaded ${raw.clients?.length || 0} clients from JSON`);
+    return clientsCache;
+  } catch (err) {
+    console.error('[CRM] Failed to load clients JSON:', err.message);
+    return null;
+  }
+}
+
+// Auto-invalidate cache when file changes
+try {
+  fs.watchFile(CLIENTS_JSON_PATH, { interval: 10000 }, () => {
+    console.log('[CRM] clients_master.json changed, invalidating cache');
+    clientsCache = null;
+    clientsCacheTimestamp = 0;
+  });
+} catch (e) { /* ignore if file doesn't exist yet */ }
+
+// GET /api/crm/clients - File-based client data for ClientsPanel
+router.get('/clients', (req, res) => {
+  try {
+    const data = loadClientsData();
+    if (!data || !data.clients) {
+      return res.json({ clients: [], count: 0 });
+    }
+
+    let clients = data.clients;
+
+    const { type, q } = req.query;
+    if (type && type !== 'all') {
+      clients = clients.filter(c => c.type === type);
+    }
+
+    if (q) {
+      const query = q.toLowerCase();
+      clients = clients.filter(c =>
+        (c.name && c.name.toLowerCase().includes(query)) ||
+        (c.company && c.company.toLowerCase().includes(query)) ||
+        (c.address && c.address.toLowerCase().includes(query)) ||
+        (c.email && c.email.toLowerCase().includes(query)) ||
+        (c.cities && c.cities.some(city => city.toLowerCase().includes(query)))
+      );
+    }
+
+    res.json({ clients, count: clients.length });
+  } catch (err) {
+    console.error('[CRM] Error serving clients:', err);
+    res.status(500).json({ error: 'Failed to load clients' });
+  }
+});
 
 // For now, return mock data based on existing entities with ownership
 // Later we'll add a proper crm_entity table

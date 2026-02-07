@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { parcelsApi, roadsApi, type PropertyMarker, type ParcelUnit, type RoadGeometry, type CompanyLabel } from '@/api/client'
 import type { Parcel, ParcelFeature, CRMEntity } from '@/types'
@@ -6,6 +7,7 @@ import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
 import 'leaflet-draw'
 import 'leaflet-draw/dist/leaflet.draw.css'
+// leaflet.gridlayer.googlemutant loaded dynamically when user selects Google Satellite (HD)
 
 interface MapProps {
   onParcelSelect: (parcel: Parcel) => void
@@ -29,6 +31,8 @@ interface MapProps {
   onMapReady?: (map: L.Map) => void
   // Company labels for tenant overlay (Layer 5)
   companyLabels?: CompanyLabel[]
+  // Quick filter state — null = parcels hidden, 'all' = show all, etc.
+  quickFilter?: string | null
   // Active layer name for badge display
   activeLayerName?: string
 }
@@ -43,10 +47,10 @@ const OC_BOUNDS: L.LatLngBoundsExpression = [
 const NORTH_OC_CENTER: L.LatLngExpression = [33.84, -117.89]
 const DEFAULT_ZOOM = 13
 
-type ImagerySource = 'osm' | 'esri'
+type ImagerySource = 'osm' | 'esri' | 'google'
 
-// Tile layer URLs - all free, no API key needed
-const TILE_LAYERS: Record<ImagerySource, { url: string; attribution: string }> = {
+// Tile layer URLs (Google uses GoogleMutant plugin, not standard tile URL)
+const TILE_LAYERS: Record<string, { url: string; attribution: string }> = {
   osm: {
     url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
@@ -96,16 +100,15 @@ const LABEL_COLORS = {
 // Subject property address to highlight in RED
 const SUBJECT_PROPERTY_ADDRESS = '1193 N Blue Gum St'
 
-// Road overlay colors by type - BRIGHT ORANGE for freeways, TEAL/AQUA for streets
-// Thinner lines for cleaner appearance
+// Road overlay colors by type - BRIGHT VIVID colors visible over satellite imagery
 const ROAD_OVERLAY_STYLES = {
-  freeway: { color: 'rgba(255, 165, 0, 0.7)', weight: 6 },       // Bright orange - thin
-  highway: { color: 'rgba(255, 165, 0, 0.6)', weight: 4 },       // Orange (ramps/links)
-  primary: { color: 'rgba(0, 188, 188, 0.5)', weight: 3 },       // Teal/aqua blue
-  secondary: { color: 'rgba(0, 188, 188, 0.4)', weight: 2 },     // Teal/aqua blue (lighter)
+  freeway: { color: '#FF6600', weight: 8, opacity: 0.85 },        // Vivid orange - thick
+  highway: { color: '#FF8800', weight: 5, opacity: 0.75 },        // Orange (ramps/links)
+  primary: { color: '#00E5FF', weight: 4, opacity: 0.7 },         // Bright cyan/aqua
+  secondary: { color: '#00BCD4', weight: 3, opacity: 0.6 },       // Teal
 }
 
-// Freeway route names for tooltips
+// Freeway name lookup for tooltip display
 const FREEWAY_NAMES: Record<string, string> = {
   '91': 'Riverside Freeway',
   '57': 'Orange Freeway',
@@ -117,17 +120,6 @@ const FREEWAY_NAMES: Record<string, string> = {
   '261': 'Eastern Toll Road',
   '133': 'Laguna Freeway',
   '73': 'San Joaquin Hills Toll Road',
-}
-
-// Manual shield positions for key freeways (placed on actual road centerlines)
-// These override dynamic placement to ensure correct, visible locations
-const MANUAL_SHIELD_POSITIONS: Record<string, { positions: [number, number][]; isInterstate: boolean }> = {
-  '5':   { positions: [[33.87, -117.925], [33.78, -117.885], [33.70, -117.855]], isInterstate: true },
-  '405': { positions: [[33.72, -117.935], [33.67, -117.925]], isInterstate: true },
-  '91':  { positions: [[33.878, -117.940]], isInterstate: false },  // Between I-5 & SR-57
-  '57':  { positions: [[33.91, -117.895], [33.84, -117.895]], isInterstate: false },
-  '22':  { positions: [[33.798, -117.945], [33.798, -117.870]], isInterstate: false },
-  '55':  { positions: [[33.77, -117.868], [33.83, -117.868]], isInterstate: false },
 }
 
 export function Map({
@@ -146,6 +138,7 @@ export function Map({
   showRecentSold = false,
   showRecentLeased = false,
   companyLabels,
+  quickFilter = null,
   onMapReady,
   activeLayerName = 'New Listings/Updates',
 }: MapProps) {
@@ -160,13 +153,17 @@ export function Map({
   const propertyLayerRef = useRef<L.LayerGroup | null>(null)
   const landLayerRef = useRef<L.LayerGroup | null>(null)
   const addressLabelLayerRef = useRef<L.LayerGroup | null>(null)
-  const freewayShieldsLayerRef = useRef<L.LayerGroup | null>(null)
   const subjectPropertyLayerRef = useRef<L.LayerGroup | null>(null)
   const roadOverlayLayerRef = useRef<L.LayerGroup | null>(null)
   const roadNameLabelsLayerRef = useRef<L.LayerGroup | null>(null)
   const companyLabelLayerRef = useRef<L.LayerGroup | null>(null)
+  const selectedParcelsLayerRef = useRef<L.LayerGroup | null>(null)
   const drawnItemsRef = useRef<L.FeatureGroup | null>(null)
   const drawControlRef = useRef<L.Control.Draw | null>(null)
+  const shieldContainerRef = useRef<HTMLDivElement | null>(null)
+  const [shieldPaneReady, setShieldPaneReady] = useState(false)
+  // Store freeway polyline coords for viewport-clamped shield positioning
+  const freewayRoutesRef = useRef<Record<string, { coords: [number, number][][]; isInterstate: boolean }>>({})
 
   const [mapBounds, setMapBounds] = useState<{
     west: number
@@ -175,12 +172,24 @@ export function Map({
     north: number
   } | null>(null)
   const [localFileLoaded, setLocalFileLoaded] = useState(false)
-  const [localFeatureCount, setLocalFeatureCount] = useState(0)
-  const [imagerySource, setImagerySource] = useState<ImagerySource>('esri')
+  const [_localFeatureCount, setLocalFeatureCount] = useState(0)
+  const [imagerySource, _setImagerySource] = useState<ImagerySource>('esri')
+  const imagerySourceRef = useRef<ImagerySource>('esri')
+  const setImagerySource = useCallback((source: ImagerySource) => {
+    imagerySourceRef.current = source
+    _setImagerySource(source)
+  }, [])
   const [currentZoom, setCurrentZoom] = useState(DEFAULT_ZOOM)
   const [drawMode, setDrawMode] = useState<'none' | 'land' | 'building'>('none')
-  const [isDrawing, setIsDrawing] = useState(false)
-  const [classifyResult, setClassifyResult] = useState<{ count: number; classification: string } | null>(null)
+  const [_isDrawing, setIsDrawing] = useState(false)
+  // Multi-select: individually clicked parcels (always visible regardless of quick filter)
+  const [selectedParcelApns, setSelectedParcelApns] = useState<Set<string>>(new Set())
+  const selectedParcelDataRef = useRef<globalThis.Map<string, { feature: any; parcel: Parcel }>>(new globalThis.Map())
+  const [_classifyResult, setClassifyResult] = useState<{ count: number; classification: string } | null>(null)
+  // 3D View state
+  const [show3D, setShow3D] = useState(false)
+  const map3dContainerRef = useRef<HTMLDivElement>(null)
+  const map3dElementRef = useRef<any>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
 
@@ -213,11 +222,11 @@ export function Map({
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
-  // Fetch parcels within bounds (only when zoomed in enough AND no specific location selected)
+  // Fetch parcels within bounds (only when zoomed in enough AND no specific location selected AND quick filter is active)
   const { data: boundsParcelsData } = useQuery({
     queryKey: ['parcels', mapBounds],
     queryFn: () => parcelsApi.getInBounds(mapBounds!),
-    enabled: !!mapBounds && currentZoom >= MIN_PARCEL_ZOOM && !selectedSearchLocation,
+    enabled: !!mapBounds && currentZoom >= MIN_PARCEL_ZOOM && !selectedSearchLocation && quickFilter !== null,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
@@ -242,7 +251,7 @@ export function Map({
   const parcelsData = selectedSearchLocation ? selectedParcelData : boundsParcelsData
 
   // Parcel style function - AQUA BLUE with semi-transparent fill (like reference image)
-  const getParcelStyle = useCallback((feature: any, zoom: number): L.PathOptions => {
+  const _getParcelStyle = useCallback((_feature: any, zoom: number): L.PathOptions => {
     // Hide parcels when zoomed out
     if (zoom < MIN_PARCEL_ZOOM) {
       return { opacity: 0, fillOpacity: 0 }
@@ -267,7 +276,7 @@ export function Map({
   }, [onParcelSelect, onParcelRightClick])
 
   // Handle local GeoJSON file upload
-  const handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const _handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !mapRef.current) return
 
@@ -312,7 +321,7 @@ export function Map({
           // Right click - context menu (use ref to avoid stale closure)
           layer.on('contextmenu', (e: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(e)
-            L.DomEvent.preventDefault(e)
+            L.DomEvent.preventDefault(e as unknown as Event)
             if (onParcelRightClickRef.current) {
               onParcelRightClickRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
             }
@@ -341,7 +350,7 @@ export function Map({
   }, []) // No dependencies - uses refs for callbacks
 
   // Clear local layer
-  const clearLocalLayer = useCallback(() => {
+  const _clearLocalLayer = useCallback(() => {
     if (localLayerRef.current) {
       localLayerRef.current.clearLayers()
       setLocalFileLoaded(false)
@@ -352,7 +361,7 @@ export function Map({
     }
   }, [])
 
-  // Switch imagery source
+  // Switch imagery source (supports Google Maps Satellite HD via dynamic import)
   const switchImagery = useCallback((source: ImagerySource) => {
     const map = mapRef.current
     if (!map) return
@@ -360,28 +369,71 @@ export function Map({
     // Remove existing tile layer
     if (tileLayerRef.current) {
       map.removeLayer(tileLayerRef.current)
+      tileLayerRef.current = null
     }
 
-    // Add new tile layer
-    const { url, attribution } = TILE_LAYERS[source]
+    // Google Maps Satellite (HD) — dynamic import with safety check
+    if (source === 'google') {
+      if (typeof window !== 'undefined' && (window as any).google?.maps) {
+        import('leaflet.gridlayer.googlemutant').then(() => {
+          // After import, the plugin adds googleMutant to L.gridLayer
+          const googleLayer = (L.gridLayer as any).googleMutant({
+            type: 'satellite',
+            maxZoom: 21,
+          })
+          googleLayer.addTo(map)
+          tileLayerRef.current = googleLayer
+
+          // Show labels on top of Google satellite
+          if (streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
+            if (!map.hasLayer(streetLabelsLayerRef.current)) {
+              streetLabelsLayerRef.current.addTo(map)
+            }
+            if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
+          }
+
+          setImagerySource('google')
+        }).catch((err) => {
+          console.warn('Failed to load GoogleMutant plugin, falling back to ESRI:', err)
+          // Fall back to ESRI
+          const { url, attribution } = TILE_LAYERS.esri
+          const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
+          fallback.addTo(map)
+          tileLayerRef.current = fallback
+          setImagerySource('esri')
+        })
+      } else {
+        console.warn('Google Maps API not loaded yet, falling back to ESRI')
+        const { url, attribution } = TILE_LAYERS.esri
+        const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
+        fallback.addTo(map)
+        tileLayerRef.current = fallback
+        setImagerySource('esri')
+      }
+      return
+    }
+
+    // ESRI or OSM tile layers
+    const { url, attribution } = TILE_LAYERS[source as 'osm' | 'esri']
+    const isEsri = source === 'esri'
     const newTileLayer = L.tileLayer(url, {
       attribution,
-      maxZoom: 19,
+      ...(isEsri ? { maxNativeZoom: 19, maxZoom: 22 } : { maxZoom: 19 }),
+      detectRetina: isEsri,
     })
     newTileLayer.addTo(map)
     tileLayerRef.current = newTileLayer
 
-    // Re-add street labels on top (if zoomed in enough and using satellite)
-    if (source === 'esri' && streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
+    // Re-add street labels on top (if zoomed in enough and using satellite imagery)
+    const isSatellite = source === 'esri'
+    if (isSatellite && streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
       if (!map.hasLayer(streetLabelsLayerRef.current)) {
         streetLabelsLayerRef.current.addTo(map)
       }
-      // Ensure parcel layer is on top of labels
       if (parcelLayerRef.current) {
         parcelLayerRef.current.bringToFront()
       }
     } else if (source === 'osm' && streetLabelsLayerRef.current) {
-      // Don't show labels overlay on OSM (it already has labels)
       if (map.hasLayer(streetLabelsLayerRef.current)) {
         map.removeLayer(streetLabelsLayerRef.current)
       }
@@ -394,10 +446,11 @@ export function Map({
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return
 
-    // Create map with explicit handlers enabled
+    // Create map with explicit handlers enabled — allow zoom up to 22 for satellite overzoom
     const map = L.map(mapContainerRef.current, {
       center: NORTH_OC_CENTER,
       zoom: DEFAULT_ZOOM,
+      maxZoom: 22,
       maxBounds: OC_BOUNDS,
       maxBoundsViscosity: 0.5,
       zoomControl: true,
@@ -412,25 +465,62 @@ export function Map({
     // Notify parent that map is ready
     onMapReady?.(map)
 
-    // Add default tile layer (ESRI aerial)
-    const { url, attribution } = TILE_LAYERS.esri
-    const tileLayer = L.tileLayer(url, {
-      attribution,
-      maxZoom: 19,
-    })
-    tileLayer.addTo(map)
-    tileLayerRef.current = tileLayer
+    // Add default tile layer — try Google Maps Satellite (HD) first, fall back to ESRI
+    const tryGoogleDefault = () => {
+      if (typeof window !== 'undefined' && (window as any).google?.maps) {
+        import('leaflet.gridlayer.googlemutant').then(() => {
+          if (!mapRef.current) return
+          const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 21 })
+          googleLayer.addTo(mapRef.current)
+          tileLayerRef.current = googleLayer
+          setImagerySource('google')
+          console.log('Google Maps Satellite (HD) loaded as default')
+        }).catch(() => {
+          // Plugin failed — use ESRI
+          addEsriDefault()
+        })
+      } else {
+        // Google API not ready yet — start with ESRI, retry Google after delay
+        addEsriDefault()
+        setTimeout(() => {
+          if ((window as any).google?.maps && mapRef.current && imagerySourceRef.current === 'esri') {
+            // Google loaded now — switch silently
+            import('leaflet.gridlayer.googlemutant').then(() => {
+              if (!mapRef.current || !tileLayerRef.current) return
+              mapRef.current.removeLayer(tileLayerRef.current)
+              const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 21 })
+              googleLayer.addTo(mapRef.current)
+              tileLayerRef.current = googleLayer
+              setImagerySource('google')
+              console.log('Upgraded to Google Maps Satellite (HD)')
+            }).catch(() => { /* stay on ESRI */ })
+          }
+        }, 3000)
+      }
+    }
+
+    const addEsriDefault = () => {
+      if (!mapRef.current) return
+      const { url, attribution } = TILE_LAYERS.esri
+      const tileLayer = L.tileLayer(url, { attribution, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
+      tileLayer.addTo(mapRef.current)
+      tileLayerRef.current = tileLayer
+      setImagerySource('esri')
+    }
+
+    tryGoogleDefault()
 
     // Create custom pane for bright street labels (higher z-index)
     map.createPane('labelsPane')
     map.getPane('labelsPane')!.style.zIndex = '650'
     map.getPane('labelsPane')!.style.pointerEvents = 'none'
 
-    // Add street labels overlay - CartoDB dark_only_labels
-    // Light text designed for dark/satellite backgrounds, includes freeway shields
+    // Add street labels overlay - CartoDB light_only_labels
+    // White text designed for dark/satellite backgrounds
     const streetLabelsLayer = L.tileLayer(CARTO_LABELS_URL, {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      maxZoom: 19,
+      maxNativeZoom: 18,
+      maxZoom: 22,
       opacity: 1,
       pane: 'labelsPane',
     })
@@ -483,13 +573,6 @@ export function Map({
     addressLabelLayer.addTo(map)
     addressLabelLayerRef.current = addressLabelLayer
 
-    // Create freeway shields layer
-    const freewayShieldsLayer = L.layerGroup()
-    freewayShieldsLayer.addTo(map)
-    freewayShieldsLayerRef.current = freewayShieldsLayer
-
-    // Freeway shields are added dynamically when road geometry loads (see useEffect below)
-
     // Create subject property layer (for highlighting specific property in RED)
     const subjectPropertyLayer = L.layerGroup()
     subjectPropertyLayer.addTo(map)
@@ -507,8 +590,21 @@ export function Map({
 
     // Create pane for road name labels (above road overlays, below parcels)
     map.createPane('roadNameLabelsPane')
-    map.getPane('roadNameLabelsPane')!.style.zIndex = '430' // Above road overlays (420)
+    map.getPane('roadNameLabelsPane')!.style.zIndex = '640' // Just below labels (650), above everything else
     map.getPane('roadNameLabelsPane')!.style.pointerEvents = 'none'
+
+    // Create shield overlay container INSIDE the Leaflet container (same stacking context as map panes)
+    // Appended directly to .leaflet-container, NOT inside .leaflet-map-pane (avoids pan transform)
+    // z-index 645: above road overlays (420) and road name labels (640), below CartoDB labels (650)
+    const shieldOverlay = document.createElement('div')
+    shieldOverlay.style.position = 'absolute'
+    shieldOverlay.style.inset = '0'
+    shieldOverlay.style.zIndex = '645'
+    shieldOverlay.style.pointerEvents = 'none'
+    shieldOverlay.style.overflow = 'hidden'
+    map.getContainer().appendChild(shieldOverlay)
+    shieldContainerRef.current = shieldOverlay
+    setShieldPaneReady(true)
 
     const roadNameLabelsLayer = L.layerGroup()
     roadNameLabelsLayer.addTo(map)
@@ -518,6 +614,11 @@ export function Map({
     const companyLabelLayer = L.layerGroup()
     companyLabelLayer.addTo(map)
     companyLabelLayerRef.current = companyLabelLayer
+
+    // Create selected parcels layer (always visible, for individually clicked parcels)
+    const selectedParcelsLayer = L.layerGroup()
+    selectedParcelsLayer.addTo(map)
+    selectedParcelsLayerRef.current = selectedParcelsLayer
 
     // Road overlays and labels will be added dynamically via useEffect when roadGeometryData loads
 
@@ -593,13 +694,11 @@ export function Map({
   useEffect(() => {
     const roadOverlayLayer = roadOverlayLayerRef.current
     const roadNameLabelsLayer = roadNameLabelsLayerRef.current
-    const freewayShieldsLayer = freewayShieldsLayerRef.current
-    if (!roadOverlayLayer || !roadNameLabelsLayer || !freewayShieldsLayer || !roadGeometryData) return
+    if (!roadOverlayLayer || !roadNameLabelsLayer || !roadGeometryData) return
 
     // Clear existing overlays, labels, and shields
     roadOverlayLayer.clearLayers()
     roadNameLabelsLayer.clearLayers()
-    freewayShieldsLayer.clearLayers()
 
     console.log(`Rendering ${roadGeometryData.features.length} road overlay segments`)
 
@@ -620,7 +719,7 @@ export function Map({
       const polyline = L.polyline(coords, {
         color: style.color,
         weight: style.weight,
-        opacity: 1,
+        opacity: (style as any).opacity || 0.8,
         lineCap: 'round',
         lineJoin: 'round',
         pane: 'roadOverlayPane',
@@ -630,14 +729,14 @@ export function Map({
 
       // Collect freeway segments for shield placement
       if (roadType === 'freeway' && feature.properties.ref) {
-        // Parse route numbers from ref (e.g. "CA 91", "I 5", "I 405", "91;57")
-        const refs = feature.properties.ref.split(';')
+        const refs = (feature.properties.ref as string).split(';')
         refs.forEach(rawRef => {
           const cleaned = rawRef.trim()
-          // Extract route number
           const match = cleaned.match(/(\d+)/)
           if (!match) return
           const routeNum = match[1]
+          // Only show shields for known OC freeways — skip routes outside our area (15, 60, 71, 105, 605, etc.)
+          if (!FREEWAY_NAMES[routeNum]) return
           const isInterstate = cleaned.startsWith('I ') || cleaned.startsWith('I-')
 
           if (!freewaySegments[routeNum]) {
@@ -650,82 +749,141 @@ export function Map({
       }
     })
 
-    // Helper to add a shield marker at a specific position
-    const addShield = (routeNum: string, lat: number, lng: number, isInterstate: boolean) => {
-      const shieldHtml = isInterstate
-        ? `<div class="freeway-shield interstate">
-            <div class="shield-inner">${routeNum}</div>
-          </div>`
-        : `<div class="freeway-shield ca-state">
-            <div class="shield-inner">${routeNum}</div>
-          </div>`
+    // Store freeway route data for viewport-clamped shield positioning
+    // Shields are rendered as React DOM, not Leaflet markers — they stay visible at viewport edges
+    freewayRoutesRef.current = freewaySegments
 
-      const icon = L.divIcon({
-        className: 'freeway-shield-container',
-        html: shieldHtml,
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
+    console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments, freeway routes stored: ${Object.keys(freewaySegments).sort().join(', ')}`)
+  }, [roadGeometryData])
+
+  // Viewport-clamped freeway shields — repositioned on every map move
+  // Shields stick to the viewport edge when their freeway scrolls off-screen
+  // EXACTLY 2 shields per freeway route (user requirement)
+  interface ShieldPos { routeNum: string; x: number; y: number; isInterstate: boolean; name: string; clamped: boolean; idx: number }
+  const [shieldPositions, setShieldPositions] = useState<ShieldPos[]>([])
+
+  const updateShieldPositions = useCallback(() => {
+    const map = mapRef.current
+    const container = shieldContainerRef.current
+    const routes = freewayRoutesRef.current
+    if (!map || !container || !routes || Object.keys(routes).length === 0) return
+
+    const mapSize = map.getSize()
+    const W = mapSize.x
+    const H = mapSize.y
+    const MARGIN = 40 // Keep shields this far from edge
+    const shields: ShieldPos[] = []
+
+    Object.entries(routes).forEach(([routeNum, { coords: segments, isInterstate }]) => {
+      // Collect all container-space points for this freeway
+      const allScreenPts: { x: number; y: number }[] = []
+      const allGeoPts: { lat: number; lng: number }[] = []
+
+      segments.forEach(seg => {
+        seg.forEach(([lat, lng]) => {
+          allGeoPts.push({ lat, lng })
+          const pt = map.latLngToContainerPoint([lat, lng])
+          allScreenPts.push({ x: pt.x, y: pt.y })
+        })
       })
 
-      const marker = L.marker([lat, lng], { icon, interactive: false })
       const name = FREEWAY_NAMES[routeNum] || `Route ${routeNum}`
-      marker.bindTooltip(name, {
-        permanent: false,
-        direction: 'top',
-        className: 'freeway-tooltip'
-      })
-      freewayShieldsLayer.addLayer(marker)
-    }
 
-    // Track which routes got manual shields
-    const manualRoutes = new Set<string>()
+      // Filter to points inside viewport
+      const visiblePts = allScreenPts.filter(p => p.x >= -50 && p.x <= W + 50 && p.y >= -50 && p.y <= H + 50)
 
-    // Place manual shields first (precise positioning for key freeways)
-    Object.entries(MANUAL_SHIELD_POSITIONS).forEach(([routeNum, { positions, isInterstate }]) => {
-      manualRoutes.add(routeNum)
-      positions.forEach(([lat, lng]) => addShield(routeNum, lat, lng, isInterstate))
-    })
+      if (visiblePts.length >= 2) {
+        // Freeway IS visible — place 2 shields at ~33% and ~66% along the visible extent
+        // Sort by combined x+y distance from top-left to get a rough ordering along the road
+        const sorted = [...visiblePts].sort((a, b) => {
+          const distA = Math.sqrt(a.x * a.x + a.y * a.y)
+          const distB = Math.sqrt(b.x * b.x + b.y * b.y)
+          return distA - distB
+        })
 
-    // Dynamic placement for remaining freeways not in manual list
-    Object.entries(freewaySegments).forEach(([routeNum, { coords: segments, isInterstate }]) => {
-      if (manualRoutes.has(routeNum)) return // Skip — already placed manually
+        const i1 = Math.floor(sorted.length * 0.33)
+        const i2 = Math.floor(sorted.length * 0.67)
+        const p1 = sorted[i1]
+        const p2 = sorted[i2]
 
-      const segmentsWithLength = segments.map(seg => {
-        let len = 0
-        for (let i = 1; i < seg.length; i++) {
-          const dlat = seg[i][0] - seg[i - 1][0]
-          const dlng = seg[i][1] - seg[i - 1][1]
-          len += Math.sqrt(dlat * dlat + dlng * dlng)
+        // Ensure minimum separation between 2 shields (at least 120px apart)
+        const dx = p2.x - p1.x
+        const dy = p2.y - p1.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+
+        if (dist >= 120) {
+          shields.push({
+            routeNum, isInterstate, name, clamped: false, idx: 0,
+            x: Math.max(MARGIN, Math.min(W - MARGIN, p1.x)),
+            y: Math.max(MARGIN, Math.min(H - MARGIN, p1.y)),
+          })
+          shields.push({
+            routeNum, isInterstate, name, clamped: false, idx: 1,
+            x: Math.max(MARGIN, Math.min(W - MARGIN, p2.x)),
+            y: Math.max(MARGIN, Math.min(H - MARGIN, p2.y)),
+          })
+        } else {
+          // Too close — just place one at midpoint
+          const mid = sorted[Math.floor(sorted.length / 2)]
+          shields.push({
+            routeNum, isInterstate, name, clamped: false, idx: 0,
+            x: Math.max(MARGIN, Math.min(W - MARGIN, mid.x)),
+            y: Math.max(MARGIN, Math.min(H - MARGIN, mid.y)),
+          })
         }
-        return { seg, len }
-      }).sort((a, b) => b.len - a.len)
-
-      const shieldCount = Math.min(2, segmentsWithLength.length)
-      const placedPositions: [number, number][] = []
-
-      for (let i = 0; i < segmentsWithLength.length && placedPositions.length < shieldCount; i++) {
-        const seg = segmentsWithLength[i].seg
-        if (seg.length < 2) continue
-        const midIdx = Math.floor(seg.length / 2)
-        const midLat = seg[midIdx][0]
-        const midLng = seg[midIdx][1]
-
-        const tooClose = placedPositions.some(([pLat, pLng]) =>
-          Math.abs(pLat - midLat) + Math.abs(pLng - midLng) < 0.04
-        )
-        if (tooClose) continue
-
-        placedPositions.push([midLat, midLng])
-        addShield(routeNum, midLat, midLng, isInterstate)
+      } else if (visiblePts.length === 1) {
+        // Only one point visible — single shield, clamped to viewport
+        const p = visiblePts[0]
+        shields.push({
+          routeNum, isInterstate, name, clamped: false, idx: 0,
+          x: Math.max(MARGIN, Math.min(W - MARGIN, p.x)),
+          y: Math.max(MARGIN, Math.min(H - MARGIN, p.y)),
+        })
+      } else if (allGeoPts.length > 0) {
+        // Freeway is OFF-screen — clamp to nearest viewport edge
+        const centerPt = map.getCenter()
+        let closestPt = allGeoPts[0]
+        let closestDist = Infinity
+        allGeoPts.forEach(p => {
+          const d = Math.abs(p.lat - centerPt.lat) + Math.abs(p.lng - centerPt.lng)
+          if (d < closestDist) { closestDist = d; closestPt = p }
+        })
+        const containerPt = map.latLngToContainerPoint([closestPt.lat, closestPt.lng])
+        shields.push({
+          routeNum, isInterstate, name, clamped: true, idx: 0,
+          x: Math.max(MARGIN, Math.min(W - MARGIN, containerPt.x)),
+          y: Math.max(MARGIN, Math.min(H - MARGIN, containerPt.y)),
+        })
       }
     })
 
-    console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments`)
-  }, [roadGeometryData])
+    setShieldPositions(shields)
+  }, [])
+
+  // Hook into map move events to reposition shields
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    // Update immediately then on every move
+    const handler = () => updateShieldPositions()
+    map.on('move', handler)
+    map.on('zoom', handler)
+    map.on('moveend', handler)
+    // Initial position
+    updateShieldPositions()
+
+    return () => {
+      map.off('move', handler)
+      map.off('zoom', handler)
+      map.off('moveend', handler)
+    }
+  }, [updateShieldPositions, roadGeometryData])
 
   // Update parcels when data changes (but not on selection change)
+  // Also hides bulk parcels when quickFilter is null
   useEffect(() => {
-    if (!parcelLayerRef.current || !parcelsData) return
+    if (!parcelLayerRef.current) return
 
     const parcelLayer = parcelLayerRef.current
     parcelLayer.clearLayers()
@@ -734,6 +892,9 @@ export function Map({
     if (subjectPropertyLayerRef.current) {
       subjectPropertyLayerRef.current.clearLayers()
     }
+
+    // If quickFilter is null, don't show bulk parcels
+    if (quickFilter === null || !parcelsData) return
 
     // Add new features - AQUA BLUE default, RED for subject property
     parcelsData.features.forEach((feature: ParcelFeature) => {
@@ -760,7 +921,7 @@ export function Map({
             fillColor: parcelColor,
             fillOpacity: parcelFillOpacity,
           }),
-          onEachFeature: (f, l) => {
+          onEachFeature: (_f, l) => {
             const parcel: Parcel = {
               apn: feature.properties.apn,
               situs_address: feature.properties.address,
@@ -775,7 +936,7 @@ export function Map({
 
             // Add "SUBJECT" label for subject property
             if (isSubjectProperty && subjectPropertyLayerRef.current) {
-              const centroid = feature.properties.centroid as { coordinates: [number, number] } | undefined
+              const centroid = feature.properties.centroid as unknown as { coordinates: [number, number] } | undefined
               if (centroid && centroid.coordinates) {
                 const [lng, lat] = centroid.coordinates
                 const subjectIcon = L.divIcon({
@@ -789,16 +950,30 @@ export function Map({
               }
             }
 
-            // Left click - select parcel (use ref)
+            // Left click - select parcel + toggle in selectedParcels set
             l.on('click', (e: L.LeafletMouseEvent) => {
               L.DomEvent.stopPropagation(e)
               onParcelSelectRef.current(parcel)
+
+              // Also toggle in the selected parcels set
+              const clickedApn = parcel.apn
+              setSelectedParcelApns(prev => {
+                const next = new Set(prev)
+                if (next.has(clickedApn)) {
+                  next.delete(clickedApn)
+                  selectedParcelDataRef.current.delete(clickedApn)
+                } else {
+                  next.add(clickedApn)
+                  selectedParcelDataRef.current.set(clickedApn, { feature, parcel })
+                }
+                return next
+              })
             })
 
             // Right click - context menu (use ref)
             l.on('contextmenu', (e: L.LeafletMouseEvent) => {
               L.DomEvent.stopPropagation(e)
-              L.DomEvent.preventDefault(e)
+              L.DomEvent.preventDefault(e as unknown as Event)
               if (onParcelRightClickRef.current) {
                 onParcelRightClickRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
               }
@@ -810,11 +985,12 @@ export function Map({
         // Skip invalid geometries
       }
     })
-  }, [parcelsData]) // Only depends on data, not callbacks
+  }, [parcelsData, quickFilter]) // Re-render when data or quick filter changes
 
   // Update styles when zoom changes (only visibility) - AQUA BLUE
+  // Also hides when quickFilter is null (parcels hidden by default)
   useEffect(() => {
-    const style = currentZoom < MIN_PARCEL_ZOOM
+    const style = (currentZoom < MIN_PARCEL_ZOOM || quickFilter === null)
       ? { opacity: 0, fillOpacity: 0 }
       : {
           color: PARCEL_COLORS.default, // Aqua/Cyan Blue
@@ -830,7 +1006,126 @@ export function Map({
     if (localLayerRef.current) {
       localLayerRef.current.setStyle(() => style)
     }
-  }, [currentZoom])
+  }, [currentZoom, quickFilter])
+
+  // Click-to-select: clicking on the map fetches the parcel at that point and toggles selection
+  // Works even when quickFilter is null (bulk parcels hidden) — individually selected parcels always show
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const handleMapClick = async (e: L.LeafletMouseEvent) => {
+      // Don't interfere with clicks on existing parcel layers (they handle their own click)
+      // Only trigger for map clicks (not parcel polygon clicks)
+      const lat = e.latlng.lat
+      const lng = e.latlng.lng
+
+      // Must be zoomed in enough to identify parcels
+      if (map.getZoom() < MIN_PARCEL_ZOOM) return
+
+      try {
+        const result = await parcelsApi.getAtPoint(lat, lng)
+        if (!result || !result.features || result.features.length === 0) return
+
+        const feature = result.features[0]
+        const apn = feature.properties?.apn
+        if (!apn) return
+
+        setSelectedParcelApns(prev => {
+          const next = new Set(prev)
+          if (next.has(apn)) {
+            // Deselect
+            next.delete(apn)
+            selectedParcelDataRef.current.delete(apn)
+          } else {
+            // Select
+            next.add(apn)
+            selectedParcelDataRef.current.set(apn, {
+              feature,
+              parcel: {
+                apn: feature.properties.apn,
+                situs_address: feature.properties.address,
+                city: feature.properties.city,
+                zip: feature.properties.zip,
+                land_sf: feature.properties.land_sf,
+                zoning: feature.properties.zoning,
+                building_count: feature.properties.building_count,
+                unit_count: feature.properties.unit_count,
+                vacant_count: feature.properties.vacant_count,
+              } as Parcel,
+            })
+          }
+          return next
+        })
+      } catch (err) {
+        console.error('Failed to fetch parcel at point:', err)
+      }
+    }
+
+    map.on('click', handleMapClick)
+    return () => {
+      map.off('click', handleMapClick)
+    }
+  }, []) // Stable — uses refs and state setters only
+
+  // Render selected parcels in their own always-visible layer (yellow highlight)
+  useEffect(() => {
+    const layer = selectedParcelsLayerRef.current
+    if (!layer) return
+
+    layer.clearLayers()
+
+    selectedParcelDataRef.current.forEach(({ feature, parcel }, apn) => {
+      if (!selectedParcelApns.has(apn)) return
+
+      try {
+        const geoLayer = L.geoJSON({
+          type: 'Feature',
+          geometry: feature.geometry,
+          properties: feature.properties,
+        } as any, {
+          style: () => ({
+            color: '#FFFF00',      // Bright yellow
+            weight: 4,
+            opacity: 1,
+            fillColor: '#FFFF00',
+            fillOpacity: 0.35,
+          }),
+          onEachFeature: (_f, l) => {
+            // Click on selected parcel → deselect it (toggle off) + open detail
+            l.on('click', (e: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(e)
+              onParcelSelectRef.current(parcel)
+              // Toggle off — remove from selected set
+              setSelectedParcelApns(prev => {
+                const next = new Set(prev)
+                if (next.has(apn)) {
+                  next.delete(apn)
+                  selectedParcelDataRef.current.delete(apn)
+                } else {
+                  next.add(apn)
+                }
+                return next
+              })
+            })
+            l.on('contextmenu', (e: L.LeafletMouseEvent) => {
+              L.DomEvent.stopPropagation(e)
+              L.DomEvent.preventDefault(e as unknown as Event)
+              if (onParcelRightClickRef.current) {
+                onParcelRightClickRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
+              }
+            })
+          },
+        })
+        layer.addLayer(geoLayer)
+      } catch (e) {
+        // Skip invalid geometries
+      }
+    })
+
+    // Bring selected parcels above bulk parcels
+    ;(layer as any).bringToFront?.()
+  }, [selectedParcelApns])
 
   // Handle center prop changes
   useEffect(() => {
@@ -873,7 +1168,7 @@ export function Map({
           if (props && onParcelSelectRef.current) {
             onParcelSelectRef.current({
               apn: feature.id as string || props.apn,
-              situs_address: props.situs_address || props.address,
+              situs_address: props.address,
               city: props.city,
               zip: props.zip,
               land_sf: props.land_sf,
@@ -890,7 +1185,7 @@ export function Map({
             onParcelRightClickRef.current(
               {
                 apn: feature.id as string || props.apn,
-                situs_address: props.situs_address || props.address,
+                situs_address: props.address,
                 city: props.city,
                 zip: props.zip,
                 land_sf: props.land_sf,
@@ -1269,7 +1564,7 @@ export function Map({
         if (!unitMatch) return
 
         // Get centroid coordinates
-        const centroid = feature.properties.centroid as { coordinates: [number, number] } | undefined
+        const centroid = feature.properties.centroid as unknown as { coordinates: [number, number] } | undefined
         if (!centroid || !centroid.coordinates) return
 
         const [lng, lat] = centroid.coordinates
@@ -1392,7 +1687,7 @@ export function Map({
   }, [drawMode, classifyMutation])
 
   // Function to start drawing with specific mode
-  const startDrawing = useCallback((mode: 'land' | 'building') => {
+  const _startDrawing = useCallback((mode: 'land' | 'building') => {
     const map = mapRef.current
     if (!map) return
 
@@ -1412,7 +1707,7 @@ export function Map({
   }, [])
 
   // Function to clear all drawn polygons
-  const clearDrawnPolygons = useCallback(() => {
+  const _clearDrawnPolygons = useCallback(() => {
     const drawnItems = drawnItemsRef.current
     if (drawnItems) {
       drawnItems.clearLayers()
@@ -1420,9 +1715,96 @@ export function Map({
     setClassifyResult(null)
   }, [])
 
+  // 3D View — create/destroy Google Maps 3D element when show3D toggles
+  useEffect(() => {
+    if (!show3D) {
+      // Destroy 3D element if exists
+      if (map3dElementRef.current && map3dContainerRef.current) {
+        map3dContainerRef.current.innerHTML = ''
+        map3dElementRef.current = null
+      }
+      return
+    }
+
+    const init3D = async () => {
+      if (!map3dContainerRef.current || !mapRef.current) return
+
+      // Get current map center and zoom
+      const center = mapRef.current.getCenter()
+      const zoom = mapRef.current.getZoom()
+
+      // Convert Leaflet zoom to Google Maps 3D range (meters above ground)
+      // Approximate: range = 591657550.5 / 2^zoom
+      const range = 591657550.5 / Math.pow(2, zoom)
+
+      try {
+        // Load Google Maps 3D library
+        const maps3d = await (window as any).google.maps.importLibrary('maps3d')
+        const { Map3DElement } = maps3d
+
+        // Create the 3D map element
+        const map3d = new Map3DElement({
+          center: { lat: center.lat, lng: center.lng, altitude: 0 },
+          range: Math.max(range, 200), // At least 200m
+          tilt: 55,
+          heading: 0,
+          mode: 'SATELLITE',
+        })
+
+        map3dContainerRef.current.innerHTML = ''
+        map3dContainerRef.current.appendChild(map3d)
+        map3dElementRef.current = map3d
+      } catch (err) {
+        console.error('Failed to initialize 3D view:', err)
+        setShow3D(false)
+      }
+    }
+
+    if ((window as any).google?.maps) {
+      init3D()
+    } else {
+      console.warn('Google Maps API not available for 3D view')
+      setShow3D(false)
+    }
+  }, [show3D])
+
   return (
     <div className="relative w-full h-full" style={{ pointerEvents: 'auto' }}>
-      <div ref={mapContainerRef} className="w-full h-full" style={{ pointerEvents: 'auto' }} />
+      {/* Leaflet 2D map — hidden when 3D is active */}
+      <div ref={mapContainerRef} className="w-full h-full" style={{ pointerEvents: 'auto', display: show3D ? 'none' : 'block' }} />
+
+      {/* Google Maps 3D container — shown when 3D is active */}
+      <div
+        ref={map3dContainerRef}
+        className="w-full h-full"
+        style={{ display: show3D ? 'block' : 'none' }}
+      />
+
+      {/* Viewport-Clamped Freeway Shields — portaled into Leaflet container for correct z-stacking */}
+      {shieldPaneReady && shieldContainerRef.current && createPortal(
+        <>
+          {shieldPositions.map((s) => (
+            <div
+              key={`${s.routeNum}-${s.idx}`}
+              className="absolute pointer-events-none"
+              style={{
+                left: s.x,
+                top: s.y,
+                transform: 'translate(-50%, -50%)',
+                opacity: s.clamped ? 0.5 : 1,
+              }}
+            >
+              {/* Freeway name label above shield */}
+              <div className="freeway-name-label">{s.name}</div>
+              {/* Shield icon */}
+              <div className={`freeway-shield ${s.isInterstate ? 'interstate' : 'ca-state'}`}>
+                <div className="shield-inner">{s.routeNum}</div>
+              </div>
+            </div>
+          ))}
+        </>,
+        shieldContainerRef.current
+      )}
 
       {/* Imagery Source Selector */}
       <div className="absolute top-20 right-4 z-[1000]">
@@ -1431,6 +1813,14 @@ export function Map({
             Map Style
           </div>
           <div className="flex flex-col">
+            <button
+              onClick={() => switchImagery('google')}
+              className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
+                imagerySource === 'google' ? 'bg-blue-50 text-blue-700 font-medium' : 'text-gray-700'
+              }`}
+            >
+              🛰️ Satellite (HD)
+            </button>
             <button
               onClick={() => switchImagery('esri')}
               className={`px-3 py-2 text-sm text-left hover:bg-gray-50 ${
@@ -1450,6 +1840,28 @@ export function Map({
           </div>
         </div>
       </div>
+
+      {/* 3D View toggle — show at zoom >= 19 */}
+      {currentZoom >= 19 && !show3D && (
+        <button
+          onClick={() => setShow3D(true)}
+          className="absolute top-56 right-4 z-[1000] px-3 py-2 bg-white rounded-lg shadow-lg text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-all"
+          title="Switch to 3D satellite view"
+        >
+          🏗️ 3D View
+        </button>
+      )}
+
+      {/* Back to 2D button — show when 3D is active */}
+      {show3D && (
+        <button
+          onClick={() => setShow3D(false)}
+          className="absolute top-4 left-4 z-[1000] px-4 py-2 bg-white rounded-lg shadow-lg text-sm font-bold text-gray-700 hover:bg-gray-100 transition-all flex items-center gap-2"
+        >
+          <span>←</span>
+          <span>Back to 2D</span>
+        </button>
+      )}
 
       {/* Active Layer Badge */}
       <div className="active-layer-badge">
@@ -1478,6 +1890,20 @@ export function Map({
       <div className="absolute bottom-4 right-4 z-[1000] bg-white px-2 py-1 rounded shadow text-xs text-gray-600">
         Zoom: {currentZoom} {currentZoom < MIN_PARCEL_ZOOM && '(zoom in to see parcels)'}
       </div>
+
+      {/* CLEAR button for selected parcels — only visible when parcels are selected */}
+      {selectedParcelApns.size > 0 && (
+        <button
+          onClick={() => {
+            setSelectedParcelApns(new Set())
+            selectedParcelDataRef.current.clear()
+          }}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1000] flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-sm font-bold rounded-full shadow-lg transition-all hover:scale-105"
+        >
+          <span>✕</span>
+          <span>Clear ({selectedParcelApns.size} parcel{selectedParcelApns.size !== 1 ? 's' : ''})</span>
+        </button>
+      )}
     </div>
   )
 }

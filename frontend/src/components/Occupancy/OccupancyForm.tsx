@@ -96,8 +96,8 @@ export function OccupancyForm({ unitId, occupancyId, onBack, onSuccess }: Occupa
   })
 
   const leaseType = watch('lease_type')
-  const rentPsf = watch('rent_psf_month')
-  const rentTotal = watch('rent_total_month')
+  const _rentPsf = watch('rent_psf_month')
+  const _rentTotal = watch('rent_total_month')
 
   // Auto-calculate rent total from PSF
   const handleRentPsfChange = (value: number) => {
@@ -117,10 +117,20 @@ export function OccupancyForm({ unitId, occupancyId, onBack, onSuccess }: Occupa
 
   const mutation = useMutation({
     mutationFn: (data: OccupancyFormData) => {
-      if (isEditing) {
-        return occupancyApi.update(occupancyId, data)
+      const cleanData = {
+        ...data,
+        lease_start: data.lease_start ?? undefined,
+        lease_expiration: data.lease_expiration ?? undefined,
+        rent_psf_month: data.rent_psf_month ?? undefined,
+        rent_total_month: data.rent_total_month ?? undefined,
+        lease_type: data.lease_type ?? undefined,
+        nnn_fees_month: data.nnn_fees_month ?? undefined,
+        notes: data.notes ?? undefined,
       }
-      return occupancyApi.create({ ...data, unit_id: unitId })
+      if (isEditing) {
+        return occupancyApi.update(occupancyId, cleanData)
+      }
+      return occupancyApi.create({ ...cleanData, unit_id: unitId })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['unit', unitId] })

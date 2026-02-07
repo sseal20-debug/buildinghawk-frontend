@@ -1,4 +1,4 @@
-const API_BASE = (import.meta.env.VITE_API_URL || '') + '/api';
+const API_BASE = ((import.meta as any).env?.VITE_API_URL || '') + '/api';
 
 class ApiError extends Error {
   constructor(public status: number, message: string, public details?: unknown) {
@@ -621,6 +621,71 @@ export const documentsApi = {
     ),
 };
 
+// Address Documents API (organized PDFs from Dropbox, indexed by address)
+export const addressDocumentsApi = {
+  // Get all PDFs for an address (exact or fuzzy match)
+  getByAddress: (address: string) =>
+    request<{
+      normalized: string;
+      display: string;
+      city?: string;
+      files: Array<{
+        filename: string;
+        original_path: string;
+        archive_path: string;
+        file_size: number;
+        document_type: string;
+        added_date: string;
+      }>;
+      file_count: number;
+      fuzzy_match?: boolean;
+      alternatives?: Array<{
+        normalized: string;
+        display: string;
+        city?: string;
+        file_count: number;
+        score: number;
+      }>;
+    }>(`/address-documents?address=${encodeURIComponent(address)}`),
+
+  // Search addresses
+  search: (query: string, limit = 20) =>
+    request<{
+      results: Array<{
+        normalized: string;
+        display: string;
+        city?: string;
+        file_count: number;
+        score: number;
+      }>;
+      total: number;
+    }>(`/address-documents/search?q=${encodeURIComponent(query)}&limit=${limit}`),
+
+  // Get direct URL to view a PDF
+  getFileUrl: (archivePath: string) =>
+    `${API_BASE}/address-documents/file/${encodeURIComponent(archivePath)}`,
+
+  // Get system stats
+  getStats: () =>
+    request<{
+      total_addresses: number;
+      total_files: number;
+      generated_at: string;
+      cities: Record<string, number>;
+      document_types: Record<string, number>;
+    }>('/address-documents/stats'),
+
+  // Batch check multiple addresses for document counts
+  batchCheck: (addresses: string[]) =>
+    request<Record<string, { has_docs: boolean; count: number }>>(
+      '/address-documents/batch-check',
+      {
+        method: 'POST',
+        body: JSON.stringify({ addresses }),
+      }
+    ),
+};
+
 // Alerts API
 export const alertsApi = {
   list: (options?: { completed?: boolean; upcoming_days?: number }) =>
@@ -1112,7 +1177,7 @@ export const saleAlertsApi = {
 // Hotsheet API - Recent activity feed
 export interface HotsheetItem {
   id: string;
-  type: 'new_listing' | 'price_change' | 'sold' | 'leased' | 'new_comp';
+  type: 'new_listing' | 'price_change' | 'sold' | 'leased' | 'new_comp' | 'escrow' | 'data_change';
   address: string;
   city: string;
   timestamp: string;
@@ -1138,6 +1203,8 @@ export interface HotsheetStats {
   sold: number;
   leased: number;
   new_comp: number;
+  escrow: number;
+  data_change: number;
   total: number;
   period: {
     timeFilter: string;
@@ -1442,4 +1509,67 @@ export const tenantsApi = {
   // Get summary statistics
   getStats: () =>
     request<TenantStats>('/tenants/stats'),
+};
+
+// ============================================================================
+// WARN Layoff Alerts API
+// ============================================================================
+
+export interface WarnAlert {
+  id: string;
+  company: string;
+  industry: string | null;
+  employees: number | null;
+  est_sf: number | null;
+  address: string;
+  city: string;
+  state: string;
+  zip: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  property_type: string | null;
+  priority: 'HIGH' | 'MEDIUM' | 'LOW';
+  layoff_type: string | null;
+  notice_date: string | null;
+  effective_date: string | null;
+  status: string;
+  opportunity_notes: string | null;
+  matched_listing_id: string | null;
+  source: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WarnAlertStats {
+  total: number;
+  high_priority: number;
+  medium_priority: number;
+  low_priority: number;
+  total_employees: number;
+  total_est_sf: number;
+  industrial_count: number;
+}
+
+export const warnAlertsApi = {
+  getAll: (params?: { priority?: string; city?: string; property_type?: string; sort?: string; limit?: number; offset?: number }) => {
+    const searchParams = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          searchParams.append(key, String(value));
+        }
+      });
+    }
+    const qs = searchParams.toString();
+    return request<{ alerts: WarnAlert[]; total: number }>(`/warn-alerts${qs ? '?' + qs : ''}`);
+  },
+
+  getStats: () =>
+    request<WarnAlertStats>('/warn-alerts/stats'),
+
+  getMapData: () =>
+    request<GeoJSON.FeatureCollection>('/warn-alerts/map'),
+
+  getById: (id: string) =>
+    request<WarnAlert>(`/warn-alerts/${id}`),
 };

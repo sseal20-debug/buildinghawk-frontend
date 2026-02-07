@@ -842,7 +842,7 @@ router.get('/search-street', async (req, res, next) => {
   }
 });
 
-// GET /api/parcels/:apn - Get single parcel with buildings and units
+// GET /api/parcels/:apn - Get single parcel with buildings, units, and occupants
 router.get('/:apn', async (req, res, next) => {
   try {
     const { apn } = req.params;
@@ -901,9 +901,40 @@ router.get('/:apn', async (req, res, next) => {
       ORDER BY b.building_name
     `, [apn]);
 
+    // Get current occupants (tenants) for this parcel via building → unit → occupancy → entity
+    let occupants = [];
+    try {
+      const occupantsResult = await query(`
+        SELECT
+          e.id AS entity_id,
+          e.entity_name,
+          e.entity_type,
+          e.website,
+          e.notes AS entity_notes,
+          o.occupant_type,
+          o.move_in_date,
+          o.lease_start,
+          o.lease_end,
+          o.monthly_rent,
+          u.street_address AS unit_address,
+          u.unit_sf
+        FROM building b
+        JOIN unit u ON u.building_id = b.id
+        JOIN occupancy o ON o.unit_id = u.id AND o.is_current = true
+        JOIN entity e ON e.id = o.entity_id
+        WHERE b.parcel_apn = $1
+        ORDER BY e.entity_name
+      `, [apn]);
+      occupants = occupantsResult.rows;
+    } catch (err) {
+      // Occupancy tables may not exist yet — graceful degradation
+      console.log(`Note: occupancy query failed for APN ${apn}: ${err.message}`);
+    }
+
     res.json({
       ...parcel,
-      buildings: buildingsResult.rows
+      buildings: buildingsResult.rows,
+      occupants,
     });
   } catch (err) {
     next(err);

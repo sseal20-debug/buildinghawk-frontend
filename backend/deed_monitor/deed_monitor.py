@@ -27,7 +27,11 @@ from decimal import Decimal
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass, asdict
 import requests
+from dotenv import load_dotenv
 from supabase import create_client, Client
+
+# Load .env file from script directory
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
 
 # Import property matcher for multi-strategy matching
 try:
@@ -36,13 +40,14 @@ try:
 except ImportError:
     PROPERTY_MATCHER_AVAILABLE = False
 
-# Configure logging
+# Configure logging (UTF-8 for Windows emoji support)
+log_dir = os.path.dirname(os.path.abspath(__file__))
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler('deed_monitor.log')
+        logging.StreamHandler(open(sys.stdout.fileno(), mode='w', encoding='utf-8', closefd=False)),
+        logging.FileHandler(os.path.join(log_dir, 'deed_monitor.log'), encoding='utf-8')
     ]
 )
 logger = logging.getLogger(__name__)
@@ -532,6 +537,11 @@ class DeedMonitor:
                 }).eq('id', run_id).execute()
             
             logger.info(f"Monitor run complete: {stats}")
+
+            # Send daily summary email
+            if not dry_run:
+                self._send_daily_summary(start_date, end_date, stats)
+
             return stats
             
         except Exception as e:
@@ -721,13 +731,18 @@ class DeedMonitor:
             except Exception as e:
                 logger.error(f"Failed to send Slack notification: {e}")
         
-        # Email notification
+        # Email notification (HTML)
         if self.config.smtp_host and self.config.notification_email:
             try:
+                price = alert.get('sale_price', 0)
+                price_str = f"${price:,.0f}" if price else ""
+                subject = f"🚨 SALE: {alert.get('address', 'Unknown')}, {alert.get('city', '')} — {price_str}"
+                html = self._format_alert_html(alert)
                 self._send_email(
                     to=self.config.notification_email,
-                    subject=f"🏭 Industrial Sale Alert: {alert['address']}",
-                    body=message
+                    subject=subject,
+                    body=message,
+                    html=html
                 )
                 logger.info("Email notification sent")
             except Exception as e:
@@ -765,20 +780,194 @@ class DeedMonitor:
         
         return "\n".join(lines)
     
-    def _send_email(self, to: str, subject: str, body: str):
-        """Send email notification."""
+    def _send_email(self, to: str, subject: str, body: str, html: str = None):
+        """Send email notification (plain text or HTML)."""
         import smtplib
         from email.mime.text import MIMEText
-        
-        msg = MIMEText(body)
+        from email.mime.multipart import MIMEMultipart
+
+        if html:
+            msg = MIMEMultipart('alternative')
+            msg.attach(MIMEText(body, 'plain'))
+            msg.attach(MIMEText(html, 'html'))
+        else:
+            msg = MIMEText(body)
+
         msg['Subject'] = subject
-        msg['From'] = self.config.smtp_user
+        msg['From'] = f'BuildingHawk Alerts <{self.config.smtp_user}>'
         msg['To'] = to
-        
+
         with smtplib.SMTP(self.config.smtp_host, 587) as server:
             server.starttls()
             server.login(self.config.smtp_user, self.config.smtp_password)
             server.send_message(msg)
+
+    def _send_daily_summary(self, start_date: str, end_date: str, stats: Dict[str, Any]):
+        """Send daily summary email after each run."""
+        if not self.config.smtp_host or not self.config.notification_email:
+            return
+
+        matched = stats['records_matched']
+        alerts = stats['alerts_created']
+        fetched = stats['records_fetched']
+        errors = stats.get('errors', [])
+        now = datetime.now().strftime('%B %d, %Y at %I:%M %p')
+
+        # Status color/icon
+        if alerts > 0:
+            status_color = '#c62828'
+            status_icon = '🚨'
+            status_text = f'{alerts} SALE ALERT{"S" if alerts > 1 else ""}'
+        elif matched > 0:
+            status_color = '#f57f17'
+            status_icon = '⚠️'
+            status_text = f'{matched} match{"es" if matched > 1 else ""} found'
+        elif errors:
+            status_color = '#e65100'
+            status_icon = '⚠️'
+            status_text = f'Completed with {len(errors)} error{"s" if len(errors) > 1 else ""}'
+        else:
+            status_color = '#2e7d32'
+            status_icon = '✅'
+            status_text = 'All clear - no sales detected'
+
+        subject = f'BuildingHawk Daily: {status_text} ({end_date})'
+
+        plain = f"""BuildingHawk Deed Monitor - Daily Summary
+{now}
+
+Date Range: {start_date} to {end_date}
+Deeds Scraped: {fetched}
+Matches: {matched}
+Alerts Created: {alerts}
+Status: {status_text}
+"""
+
+        html = f"""
+<html>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f5f5f5; padding: 20px;">
+<div style="background: #1565c0; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+    <h1 style="margin: 0; font-size: 22px;">🦅 BuildingHawk Deed Monitor</h1>
+    <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 14px;">Daily Summary &mdash; {now}</p>
+</div>
+<div style="background: white; padding: 20px; border: 1px solid #e0e0e0; border-top: none;">
+    <div style="background: {status_color}; color: white; padding: 12px 16px; border-radius: 6px; font-size: 16px; font-weight: bold; margin-bottom: 20px;">
+        {status_icon} {status_text}
+    </div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 10px 0; color: #666;">Date Range</td>
+            <td style="padding: 10px 0; text-align: right; font-weight: bold;">{start_date} to {end_date}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 10px 0; color: #666;">Deeds Scraped</td>
+            <td style="padding: 10px 0; text-align: right; font-weight: bold;">{fetched}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 10px 0; color: #666;">Watchlist Matches</td>
+            <td style="padding: 10px 0; text-align: right; font-weight: bold; color: {'#c62828' if matched > 0 else '#333'};">{matched}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 10px 0; color: #666;">Sale Alerts Created</td>
+            <td style="padding: 10px 0; text-align: right; font-weight: bold; color: {'#c62828' if alerts > 0 else '#333'};">{alerts}</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px 0; color: #666;">Parcels Monitored</td>
+            <td style="padding: 10px 0; text-align: right; font-weight: bold;">{len(self._watchlist_cache):,}</td>
+        </tr>
+    </table>
+</div>
+<div style="background: #fafafa; padding: 12px 20px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px;">
+    <p style="color: #999; font-size: 11px; margin: 0;">
+        Source: OC RecorderWorks | Matching: APN + Lot/Tract + Address |
+        <a href="https://buildinghawk.com" style="color: #1565c0;">Open BuildingHawk</a>
+    </p>
+</div>
+</body>
+</html>
+"""
+        try:
+            self._send_email(
+                to=self.config.notification_email,
+                subject=subject,
+                body=plain,
+                html=html
+            )
+            logger.info(f"Daily summary email sent to {self.config.notification_email}")
+        except Exception as e:
+            logger.error(f"Failed to send daily summary email: {e}")
+
+    def _format_alert_html(self, alert: Dict[str, Any]) -> str:
+        """Format sale alert as HTML email."""
+        price = alert.get('sale_price', 0)
+        price_str = f"${price:,.0f}" if price else "Unknown"
+        address = alert.get('address', 'Unknown')
+        city = alert.get('city', '')
+        apn = alert.get('apn', 'Unknown')
+        buyer = alert.get('buyer', 'Unknown')
+        seller = alert.get('seller', 'Unknown')
+        sale_date = alert.get('sale_date', 'Unknown')
+
+        extras = ''
+        if alert.get('was_listed') and alert.get('listing_price'):
+            listing = alert['listing_price']
+            diff = alert.get('price_vs_listing', 0)
+            extras += f"""
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px 0; color: #666;">Listed Price</td>
+                <td style="padding: 8px 0; text-align: right;">${listing:,.0f} ({diff:+.1f}%)</td>
+            </tr>"""
+        if alert.get('price_vs_assessed'):
+            ratio = alert['price_vs_assessed']
+            extras += f"""
+            <tr style="border-bottom: 1px solid #eee;">
+                <td style="padding: 8px 0; color: #666;">Sale/Assessed Ratio</td>
+                <td style="padding: 8px 0; text-align: right;">{ratio:.2f}x</td>
+            </tr>"""
+
+        return f"""
+<html>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; background: #f5f5f5; padding: 20px;">
+<div style="background: #c62828; color: white; padding: 20px; border-radius: 8px 8px 0 0;">
+    <h1 style="margin: 0; font-size: 22px;">🚨 Industrial Sale Alert</h1>
+    <p style="margin: 5px 0 0 0; opacity: 0.9; font-size: 16px;">{address}, {city}</p>
+</div>
+<div style="background: white; padding: 20px; border: 1px solid #e0e0e0; border-top: none;">
+    <div style="background: #ffebee; border-left: 4px solid #c62828; padding: 16px; margin-bottom: 20px; border-radius: 0 6px 6px 0;">
+        <span style="font-size: 28px; font-weight: bold; color: #c62828;">{price_str}</span>
+    </div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 8px 0; color: #666;">📍 Address</td>
+            <td style="padding: 8px 0; text-align: right; font-weight: bold;">{address}, {city}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 8px 0; color: #666;">🏷️ APN</td>
+            <td style="padding: 8px 0; text-align: right;">{apn}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 8px 0; color: #666;">📅 Recording Date</td>
+            <td style="padding: 8px 0; text-align: right;">{sale_date}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 8px 0; color: #666;">👤 Seller</td>
+            <td style="padding: 8px 0; text-align: right;">{seller}</td>
+        </tr>
+        <tr style="border-bottom: 1px solid #eee;">
+            <td style="padding: 8px 0; color: #666;">👤 Buyer</td>
+            <td style="padding: 8px 0; text-align: right;">{buyer}</td>
+        </tr>
+        {extras}
+    </table>
+</div>
+<div style="background: #fafafa; padding: 12px 20px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px;">
+    <p style="color: #999; font-size: 11px; margin: 0;">
+        <a href="https://buildinghawk.com" style="color: #1565c0;">Open BuildingHawk</a> to view details
+    </p>
+</div>
+</body>
+</html>
+"""
 
 
 # =============================================================================

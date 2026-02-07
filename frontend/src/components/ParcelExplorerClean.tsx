@@ -6,6 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
+import { AddressDocuments } from "./DocumentDrawer/AddressDocuments";
 
 // ============================================================================
 // CONSTANTS
@@ -1352,6 +1353,11 @@ export default function ParcelExplorer() {
                       )}
                     </div>
                   )}
+
+                  {/* Archived Documents from AddressPDFs index */}
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <AddressDocuments address={selectedAddr} />
+                  </div>
                 </div>
               </div>
             ) : (

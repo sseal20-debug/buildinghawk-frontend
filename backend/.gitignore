@@ -1,4 +1,14 @@
 node_modules/
 .env
 *.db
-data/
+/data/
+coverage/
+*.xlsx
+*.csv.xlsx
+err.txt
+err2.txt
+out.txt
+out2.txt
+update_log.txt
+/deed_monitor/
+/db/

@@ -22,6 +22,8 @@ import roadsRouter from './routes/roads.js';
 import emailsRouter from './routes/emails.js';
 import tenantsRouter from './routes/tenants.js';
 import listingsRouter from './routes/listings.js';
+import warnAlertsRouter from './routes/warn-alerts.js';
+import addressDocumentsRouter from './routes/address-documents.js';
 import { requireAuth } from './middleware/auth.js';
 
 dotenv.config();
@@ -33,7 +35,12 @@ const PORT = process.env.PORT || 3001;
 app.use(helmet());
 app.use(cors({
   origin: process.env.NODE_ENV === 'production'
-    ? process.env.FRONTEND_URL
+    ? [
+        process.env.FRONTEND_URL,
+        'https://buildinghawk.com',
+        'https://www.buildinghawk.com',
+        'https://buildinghawk-frontend.vercel.app'
+      ].filter(Boolean)
     : ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:5175', 'http://localhost:5176', 'http://localhost:3000'],
   credentials: true
 }));
@@ -72,6 +79,8 @@ app.use('/api/roads', roadsRouter);
 app.use('/api/emails', emailsRouter);
 app.use('/api/tenants', tenantsRouter);
 app.use('/api/listings', listingsRouter);
+app.use('/api/warn-alerts', warnAlertsRouter);
+app.use('/api/address-documents', addressDocumentsRouter);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

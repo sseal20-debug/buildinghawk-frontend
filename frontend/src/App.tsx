@@ -9,15 +9,18 @@ import { AlertsList } from "./components/Alerts/AlertsList"
 import { SaleAlertsList } from "./components/Alerts/SaleAlertsList"
 import ParcelExplorer from "./components/ParcelExplorerClean"
 import { ParcelClassifier } from "./components/ParcelClassifier"
-import { LayerSidebar, RightSearchPanel } from "./components/Sidebar"
+import { LayerSidebar } from "./components/Sidebar"
 import type { LayerKey } from "./components/Sidebar"
-import type { QuickFilter, PropertyResult } from "./components/Sidebar/RightSearchPanel"
+import { TopSearchBar } from "./components/Search/TopSearchBar"
+import type { QuickFilter } from "./components/Search/TopSearchBar"
 import L from 'leaflet'
 import { DocumentDrawer } from "./components/DocumentDrawer"
 import { CompsSearch } from "./components/Comps"
 import { TenantsSearch } from "./components/Tenants"
 import { HotsheetPanel } from "./components/Hotsheet"
+import { WarnAlertsPanel } from "./components/WarnAlerts/WarnAlertsPanel"
 import { EmailHistoryPanel } from "./components/EmailHistory"
+import { VacantPanel, ClientsPanel, CondosPanel, StatsPanel } from "./components/Panels"
 import { LoginView } from "./pages/LoginView"
 import { PropertyContextMenu, type ContextMenuAction } from "./components/Map/PropertyContextMenu"
 import { PropertyCard } from "./components/Map/PropertyCard"
@@ -169,7 +172,7 @@ function FilterTab({
   )
 }
 
-type PanelView = "none" | "search" | "results" | "save-search" | "saved-searches" | "alerts" | "sale-alerts" | "explorer" | "crm" | "comps" | "hotsheet" | "emails" | "tenants"
+type PanelView = "none" | "search" | "results" | "save-search" | "saved-searches" | "alerts" | "sale-alerts" | "explorer" | "crm" | "comps" | "hotsheet" | "emails" | "tenants" | "warn" | "vacant" | "clients" | "condos" | "stats" | "owners" | "requirements" | "investors" | "address" | "type" | "offmarket"
 
 // CRM Dropdown Panel with Prospects/Clients/Properties/Land checkboxes
 function CRMDropdownPanel({
@@ -541,6 +544,7 @@ const LAYER_NAMES: Record<string, string> = {
   comps: 'Comps',
   newdev: 'New Developments',
   vacant: 'Vacant',
+  condos: 'Condos',
   offmarket: 'Off-Market',
   tenants: 'Tenants',
   owners: 'Owner-Users',
@@ -560,6 +564,7 @@ const LAYER_NAMES: Record<string, string> = {
   social: 'Social Media',
   custom: 'Customization',
   crm: 'CRM',
+  stats: 'Market Stats',
 }
 
 // Main application component (after login)
@@ -580,7 +585,8 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
 
   // Sidebar state
   const [activeLayer, setActiveLayer] = useState<LayerKey>('listings')
-  const [quickFilter, setQuickFilter] = useState<QuickFilter>('all')
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [quickFilter, setQuickFilter] = useState<QuickFilter | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
 
   // Context menu state
@@ -611,7 +617,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   // Query for CRM prospects when checkbox is checked
   const { data: prospectsData } = useQuery({
     queryKey: ["crm", "prospects", prospectFilter],
-    queryFn: () => crmApi.getProspects(prospectFilter),
+    queryFn: () => crmApi.getProspects(prospectFilter as any),
     enabled: showProspects,
   })
 
@@ -892,52 +898,23 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     setPanelView("none")
   }, [])
 
-  // Handle right-panel property click - fly to location
-  const handleRightPanelPropertyClick = useCallback((property: PropertyResult) => {
-    if (property.lat && property.lng) {
-      setMapCenter({ lat: property.lat, lng: property.lng })
-      setSelectedSearchLocation({ lat: property.lat, lng: property.lng })
-    }
+  // Handle top search bar result - fly to location
+  const handleTopSearchSelect = useCallback((result: { lat: number; lng: number; address: string }) => {
+    setMapCenter({ lat: result.lat, lng: result.lng })
+    setSelectedSearchLocation({ lat: result.lat, lng: result.lng })
   }, [])
-
-  // Build properties list for right panel from CRM data
-  const rightPanelProperties: PropertyResult[] = (propertiesData || [])
-    .filter((p: any) => {
-      // Quick filter
-      if (quickFilter === 'sale' && !p.for_sale) return false
-      if (quickFilter === 'lease' && !p.for_lease) return false
-      if (quickFilter === 'sold' && !p.is_sold) return false
-      // Search filter
-      if (searchQuery) {
-        const searchLower = searchQuery.toLowerCase()
-        const searchFields = [p.address, p.city, p.owner_name].filter(Boolean).join(' ').toLowerCase()
-        if (!searchFields.includes(searchLower)) return false
-      }
-      return true
-    })
-    .slice(0, 50)
-    .map((p: any) => ({
-      id: String(p.id || ''),
-      address: p.address || p.full_address || 'Unknown',
-      city: p.city || '',
-      status: (p.for_sale ? 'sale' : p.for_lease ? 'lease' : p.is_sold ? 'sold' : 'none') as 'sale' | 'lease' | 'sold' | 'none',
-      building_sf: p.building_sf || p.sqft,
-      year_built: p.year_built,
-      price: p.sale_price || p.last_sale_price,
-      lease_rate: p.lease_rate,
-      lat: p.lat || p.latitude,
-      lng: p.lng || p.longitude,
-    }))
 
   return (
     <div className="h-full w-full flex relative" style={{ fontFamily: "'Inter', -apple-system, sans-serif" }}>
       {/* Left Sidebar - Layer Buttons */}
       <LayerSidebar
         activeLayer={activeLayer}
+        isOpen={sidebarOpen}
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
         onLayerChange={(layer) => {
           setActiveLayer(layer)
           // Enable properties/land automatically based on layer
-          if (layer === 'listings' || layer === 'address' || layer === 'specs' || layer === 'type' || layer === 'comps' || layer === 'vacant' || layer === 'offmarket' || layer === 'newdev') {
+          if (layer === 'listings' || layer === 'address' || layer === 'specs' || layer === 'type' || layer === 'comps' || layer === 'vacant' || layer === 'offmarket' || layer === 'newdev' || layer === 'condos') {
             setShowProperties(true)
           }
           if (layer === 'crm') {
@@ -948,12 +925,28 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           setShowTenantLabels(layer === 'tenants')
           // Open corresponding panel
           const layerPanelMap: Partial<Record<LayerKey, PanelView>> = {
+            // Property Layers
             listings: 'hotsheet',
+            address: 'address',
             specs: 'search',
+            type: 'type',
             comps: 'comps',
+            vacant: 'vacant',
+            condos: 'condos',
+            offmarket: 'offmarket',
+            // People & Entities
+            tenants: 'tenants',
+            owners: 'owners',
+            'buy-lease': 'requirements',
+            investor: 'investors',
+            looking: 'requirements',
+            clients: 'clients',
+            // Market Intelligence
+            distressed: 'warn',
+            // Tools & Settings
             alerts: 'alerts',
             crm: 'explorer',
-            tenants: 'tenants',
+            stats: 'stats',
           }
           const panel = layerPanelMap[layer]
           if (panel) {
@@ -968,6 +961,15 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           comps: 0,
           vacant: 0,
         }}
+      />
+
+      {/* Top Search Bar + Quick Filters */}
+      <TopSearchBar
+        onSelect={handleTopSearchSelect}
+        onSearchChange={setSearchQuery}
+        sidebarOpen={sidebarOpen}
+        activeFilter={quickFilter}
+        onFilterChange={setQuickFilter}
       />
 
       {/* Center - Map */}
@@ -986,6 +988,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             propertyMarkers={showProperties ? propertiesData : undefined}
             landMarkers={showLand ? landData : undefined}
             companyLabels={showTenantLabels ? companyLabelsData : undefined}
+            quickFilter={quickFilter}
             onMapReady={(map) => {
               mapComponentRef.current = { getMap: () => map }
             }}
@@ -1085,6 +1088,9 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
                 onClose={closePanel}
                 onEntitySelect={handleEntitySelect}
                 onUnitSelect={handleAlertUnitSelect}
+                onParcelSelect={(apn) => {
+                  handleSearchSelect({ apn, centroid: undefined })
+                }}
               />
             )}
 
@@ -1125,6 +1131,10 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
               />
             )}
 
+            {panelView === "warn" && (
+              <WarnAlertsPanel onClose={closePanel} />
+            )}
+
             {panelView === "emails" && (
               <EmailHistoryPanel
                 address={emailSearchQuery}
@@ -1134,6 +1144,40 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
 
             {panelView === "tenants" && (
               <TenantsSearch onClose={closePanel} />
+            )}
+
+            {panelView === "vacant" && (
+              <VacantPanel
+                onClose={closePanel}
+                onPropertySelect={(unit) => {
+                  console.log('Vacant unit selected:', unit)
+                  setPanelView("none")
+                }}
+              />
+            )}
+
+            {panelView === "clients" && (
+              <ClientsPanel
+                onClose={closePanel}
+                onClientSelect={(client) => {
+                  console.log('Client selected:', client)
+                  setPanelView("none")
+                }}
+              />
+            )}
+
+            {panelView === "condos" && (
+              <CondosPanel
+                onClose={closePanel}
+                onCondoSelect={(condo) => {
+                  console.log('Condo selected:', condo)
+                  setPanelView("none")
+                }}
+              />
+            )}
+
+            {panelView === "stats" && (
+              <StatsPanel onClose={closePanel} />
             )}
           </div>
         )}
@@ -1168,15 +1212,6 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         )}
       </div>
 
-      {/* Right Search Panel */}
-      <RightSearchPanel
-        properties={rightPanelProperties}
-        totalCount={propertiesData?.length || 0}
-        onPropertyClick={handleRightPanelPropertyClick}
-        onSearch={setSearchQuery}
-        onFilterChange={setQuickFilter}
-        activeFilter={quickFilter}
-      />
     </div>
   )
 }

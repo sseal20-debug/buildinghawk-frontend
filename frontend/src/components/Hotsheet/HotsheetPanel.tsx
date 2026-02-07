@@ -21,6 +21,8 @@ const TYPE_FILTERS = [
   { label: 'Sold', value: 'sold' },
   { label: 'Leased', value: 'leased' },
   { label: 'New Comps', value: 'new_comp' },
+  { label: 'In Escrow', value: 'escrow' },
+  { label: 'Data Changes', value: 'data_change' },
 ]
 
 interface HotsheetPanelProps {
@@ -48,6 +50,8 @@ export function HotsheetPanel({ onClose, onPropertySelect }: HotsheetPanelProps)
       case 'sold': return '✅'
       case 'leased': return '🤝'
       case 'new_comp': return '📊'
+      case 'escrow': return '⏳'
+      case 'data_change': return '📝'
       default: return '📋'
     }
   }
@@ -59,6 +63,8 @@ export function HotsheetPanel({ onClose, onPropertySelect }: HotsheetPanelProps)
       case 'sold': return 'bg-blue-100 text-blue-800'
       case 'leased': return 'bg-purple-100 text-purple-800'
       case 'new_comp': return 'bg-teal-100 text-teal-800'
+      case 'escrow': return 'bg-orange-100 text-orange-800'
+      case 'data_change': return 'bg-slate-100 text-slate-800'
       default: return 'bg-gray-100 text-gray-800'
     }
   }

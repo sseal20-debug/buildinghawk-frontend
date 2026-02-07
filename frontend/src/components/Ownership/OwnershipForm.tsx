@@ -48,7 +48,7 @@ export function OwnershipForm({ buildingId, ownershipId, onBack, onSuccess }: Ow
   const {
     register,
     handleSubmit,
-    watch,
+    watch: _watch,
     setValue,
     formState: { errors, isSubmitting },
   } = useForm<OwnershipFormData>({
@@ -85,10 +85,18 @@ export function OwnershipForm({ buildingId, ownershipId, onBack, onSuccess }: Ow
 
   const mutation = useMutation({
     mutationFn: (data: OwnershipFormData) => {
-      if (isEditing) {
-        return ownershipApi.update(ownershipId, data)
+      const cleanData = {
+        ...data,
+        purchase_date: data.purchase_date ?? undefined,
+        purchase_price: data.purchase_price ?? undefined,
+        purchase_price_psf: data.purchase_price_psf ?? undefined,
+        land_price_psf: data.land_price_psf ?? undefined,
+        notes: data.notes ?? undefined,
       }
-      return ownershipApi.create({ ...data, building_id: buildingId })
+      if (isEditing) {
+        return ownershipApi.update(ownershipId, cleanData)
+      }
+      return ownershipApi.create({ ...cleanData, building_id: buildingId })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['building', buildingId] })

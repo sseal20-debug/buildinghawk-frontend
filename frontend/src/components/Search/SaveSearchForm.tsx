@@ -40,6 +40,10 @@ export function SaveSearchForm({ criteria, onSuccess, onCancel }: SaveSearchForm
     mutationFn: (data: SaveSearchFormData) =>
       searchApi.createSavedSearch({
         ...data,
+        client_name: data.client_name ?? undefined,
+        client_email: data.client_email ?? undefined,
+        client_phone: data.client_phone ?? undefined,
+        notes: data.notes ?? undefined,
         criteria,
       }),
     onSuccess: () => {

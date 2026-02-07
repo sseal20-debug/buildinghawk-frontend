@@ -40,7 +40,7 @@ export function ParcelDetail({ apn, onUnitSelect, onAddUnit, onClose }: ParcelDe
     setEditValues({
       land_sf: parcel?.land_sf || 0,
       zoning: parcel?.zoning || '',
-      owner_name: parcel?.assessor_owner_name || parcel?.owner_name || '',
+      owner_name: parcel?.assessor_owner_name || '',
       tenant_name: '', // Will be populated from occupancy data when available
     })
     setIsEditing(true)
@@ -186,7 +186,7 @@ export function ParcelDetail({ apn, onUnitSelect, onAddUnit, onClose }: ParcelDe
             />
           ) : (
             <div className="text-sm font-medium text-gray-900 truncate">
-              {parcel.assessor_owner_name || parcel.owner_name || '—'}
+              {parcel.assessor_owner_name || '—'}
             </div>
           )}
         </div>
@@ -201,9 +201,31 @@ export function ParcelDetail({ apn, onUnitSelect, onAddUnit, onClose }: ParcelDe
               placeholder="Tenant name"
             />
           ) : (
-            <div className="text-sm font-medium text-gray-900 truncate">
-              {/* TODO: Get tenant from occupancy data */}
-              —
+            <div className="text-sm font-medium text-gray-900">
+              {(parcel as any).occupants && (parcel as any).occupants.length > 0 ? (
+                <div className="space-y-1">
+                  {(parcel as any).occupants.map((occ: any, i: number) => (
+                    <div key={occ.entity_id || i} className="flex items-center gap-1">
+                      <span className="truncate">{occ.entity_name}</span>
+                      {occ.website && (
+                        <a
+                          href={occ.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-500 hover:text-blue-700 flex-shrink-0"
+                          title={occ.website}
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                        </a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-gray-400">—</span>
+              )}
             </div>
           )}
         </div>

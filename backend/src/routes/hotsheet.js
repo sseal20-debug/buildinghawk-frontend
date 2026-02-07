@@ -7,7 +7,7 @@ const router = Router();
 // Query params validation
 const hotsheetQuerySchema = z.object({
   timeFilter: z.enum(['1d', '3d', '1w', '1m', '3m', '6m', '1y', '2y']).default('1w'),
-  typeFilter: z.enum(['all', 'new_listing', 'price_change', 'sold', 'leased', 'new_comp']).default('all'),
+  typeFilter: z.enum(['all', 'new_listing', 'price_change', 'sold', 'leased', 'new_comp', 'escrow', 'data_change']).default('all'),
   limit: z.string().transform(Number).pipe(z.number().min(1).max(100)).default('50'),
 });
 
@@ -34,6 +34,7 @@ function toHotsheetItem(row) {
   let type = 'new_listing';
   if (row.status === 'sold') type = 'sold';
   else if (row.status === 'leased') type = 'leased';
+  else if (row.status === 'pending') type = 'escrow';
   else if (row.is_price_reduced) type = 'price_change';
   else if (row.is_new) type = 'new_listing';
 
@@ -84,6 +85,10 @@ router.get('/', async (req, res, next) => {
       typeCondition = "AND status = 'sold'";
     } else if (params.typeFilter === 'leased') {
       typeCondition = "AND status = 'leased'";
+    } else if (params.typeFilter === 'escrow') {
+      typeCondition = "AND status = 'pending'";
+    } else if (params.typeFilter === 'data_change') {
+      typeCondition = "AND id IN (SELECT listing_id FROM listing_history WHERE change_type NOT IN ('new_listing', 'rate_reduced', 'rate_increased', 'price_reduced', 'price_increased'))";
     }
 
     const result = await query(`
@@ -137,6 +142,7 @@ router.get('/stats', async (req, res, next) => {
         COUNT(*) FILTER (WHERE is_price_reduced = true) AS price_change,
         COUNT(*) FILTER (WHERE status = 'sold') AS sold,
         COUNT(*) FILTER (WHERE status = 'leased') AS leased,
+        COUNT(*) FILTER (WHERE status = 'pending') AS escrow,
         COUNT(*) AS total
       FROM listings
       WHERE last_updated >= $1 AND last_updated <= $2
@@ -148,6 +154,8 @@ router.get('/stats', async (req, res, next) => {
       price_change: parseInt(row.price_change),
       sold: parseInt(row.sold),
       leased: parseInt(row.leased),
+      escrow: parseInt(row.escrow || 0),
+      data_change: 0,
       total: parseInt(row.total),
       period: {
         timeFilter: params.timeFilter,
