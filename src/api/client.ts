@@ -1177,7 +1177,7 @@ export const saleAlertsApi = {
 // Hotsheet API - Recent activity feed
 export interface HotsheetItem {
   id: string;
-  type: 'new_listing' | 'price_change' | 'sold' | 'leased' | 'new_comp';
+  type: 'new_listing' | 'price_change' | 'sold' | 'leased' | 'new_comp' | 'escrow' | 'data_change';
   address: string;
   city: string;
   timestamp: string;
@@ -1203,6 +1203,8 @@ export interface HotsheetStats {
   sold: number;
   leased: number;
   new_comp: number;
+  escrow: number;
+  data_change: number;
   total: number;
   period: {
     timeFilter: string;
@@ -1344,6 +1346,71 @@ export const roadsApi = {
 
   // Clear cache (for testing)
   clearCache: () => request<{ message: string }>('/roads/clear-cache'),
+};
+
+// ============================================================================
+// BUILDING SEARCH API (Full-screen search page)
+// ============================================================================
+
+export interface BuildingSearchCriteria {
+  cities?: string[];
+  min_sf?: number;
+  max_sf?: number;
+  property_type?: string;
+  listing_status?: string;
+  year_built_min?: number;
+  year_built_max?: number;
+  owner_name?: string;
+  min_clear_height?: number;
+  min_docks?: number;
+  min_gl_doors?: number;
+  min_amps?: number;
+  power_volts?: string;
+  fenced_yard?: boolean;
+  sort_by?: string;
+  sort_dir?: 'asc' | 'desc';
+}
+
+export interface BuildingSearchResult {
+  building_id: string;
+  apn: string;
+  address: string;
+  city: string;
+  building_sf: number | null;
+  lot_sf: number | null;
+  year_built: number | null;
+  zoning: string | null;
+  latitude: number;
+  longitude: number;
+  listing_type: string | null;
+  listing_status: string | null;
+  listing_rate: number | null;
+  listing_price: number | null;
+  broker_name: string | null;
+  owner_name: string | null;
+  land_use: string | null;
+  last_sale_price: number | null;
+  last_sale_date: string | null;
+  company: string | null;
+  contact_name: string | null;
+  phone: string | null;
+}
+
+export interface FilterOptions {
+  cities: Array<{ city: string; count: number }>;
+  property_types: string[];
+  statuses: string[];
+}
+
+export const buildingSearchApi = {
+  execute: (criteria: BuildingSearchCriteria) =>
+    request<{ results: BuildingSearchResult[]; count: number }>('/search/buildings', {
+      method: 'POST',
+      body: JSON.stringify(criteria),
+    }),
+
+  getFilterOptions: () =>
+    request<FilterOptions>('/search/filter-options'),
 };
 
 // ============================================================================

@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Parcel } from '@/types'
+import { parcelsApi } from '@/api/client'
 
 interface PropertyContextMenuProps {
   parcel: Parcel
@@ -128,6 +129,16 @@ export function PropertyContextMenu({ parcel, position, onClose, onAction }: Pro
   const [activeTab, setActiveTab] = useState<'info' | 'actions'>('info')
   const [edits, setEdits] = useState<UserFieldEdits>({})
   const [shareMode, setShareMode] = useState<'private' | 'team'>('private')
+  const [fullParcel, setFullParcel] = useState<Parcel | null>(null)
+
+  // Fetch full parcel data (with buildings + units) when menu opens
+  useEffect(() => {
+    if (parcel?.apn) {
+      parcelsApi.getByApn(parcel.apn)
+        .then(data => setFullParcel(data))
+        .catch(() => {}) // Silently fail - show what we have
+    }
+  }, [parcel?.apn])
 
   // Load any saved edits for this parcel
   useEffect(() => {
@@ -180,15 +191,18 @@ export function PropertyContextMenu({ parcel, position, onClose, onAction }: Pro
     }
   }, [onClose])
 
+  // Use fullParcel (with buildings+units from API) when available, fallback to parcel from map
+  const dataParcel = fullParcel || parcel
+
   // Derived data from parcel + buildings + units
-  const building = parcel.buildings?.[0]
+  const building = dataParcel.buildings?.[0]
   const units = building?.units || []
   const totalUnits = units.length
   const vacantUnits = units.filter(u => u.unit_status === 'vacant').length
   const forSaleUnits = units.filter(u => u.for_sale).length
   const forLeaseUnits = units.filter(u => u.for_lease).length
   const totalBuildingSf = building?.building_sf || 0
-  const lotAcres = parcel.land_sf ? (parcel.land_sf / 43560).toFixed(2) : null
+  const lotAcres = dataParcel.land_sf ? (dataParcel.land_sf / 43560).toFixed(2) : null
   const isMultiTenant = totalUnits > 1
   const firstUnit = units[0]
   const occupancy = firstUnit?.current_occupancy
@@ -265,10 +279,10 @@ export function PropertyContextMenu({ parcel, position, onClose, onAction }: Pro
             <Section label="Building Specs" color="text-blue-600" />
             <div className="px-1">
               <EditableField label="Bldg SF" value={totalBuildingSf} fieldKey="building_sf" icon="📐" suffix=" SF" edits={edits} onEdit={handleEdit} />
-              <EditableField label="Lot SF" value={parcel.land_sf} fieldKey="land_sf" icon="📏" suffix=" SF" edits={edits} onEdit={handleEdit} />
+              <EditableField label="Lot SF" value={dataParcel.land_sf} fieldKey="land_sf" icon="📏" suffix=" SF" edits={edits} onEdit={handleEdit} />
               <EditableField label="Lot Acres" value={lotAcres} fieldKey="lot_acres" icon="🌳" suffix=" ac" edits={edits} onEdit={handleEdit} />
               <EditableField label="Year Built" value={building?.year_built} fieldKey="year_built" icon="📅" edits={edits} onEdit={handleEdit} />
-              <EditableField label="Zoning" value={parcel.zoning} fieldKey="zoning" icon="🏷️" edits={edits} onEdit={handleEdit} />
+              <EditableField label="Zoning" value={dataParcel.zoning} fieldKey="zoning" icon="🏷️" edits={edits} onEdit={handleEdit} />
               <EditableField label="Clear Ht" value={firstUnit?.clear_height_ft} fieldKey="clear_height" icon="↕️" suffix="'" edits={edits} onEdit={handleEdit} />
               <EditableField label="Dock Doors" value={firstUnit?.dock_doors} fieldKey="dock_doors" icon="🚛" edits={edits} onEdit={handleEdit} />
               <EditableField label="GL Doors" value={firstUnit?.gl_doors} fieldKey="gl_doors" icon="🚪" edits={edits} onEdit={handleEdit} />
@@ -308,7 +322,7 @@ export function PropertyContextMenu({ parcel, position, onClose, onAction }: Pro
             {/* Owner Info */}
             <Section label="Ownership" color="text-orange-600" />
             <div className="px-1">
-              <EditableField label="Owner" value={parcel.assessor_owner_name} fieldKey="owner_name" icon="👤" edits={edits} onEdit={handleEdit} />
+              <EditableField label="Owner" value={dataParcel.assessor_owner_name} fieldKey="owner_name" icon="👤" edits={edits} onEdit={handleEdit} />
               <EditableField label="Phone" value={null} fieldKey="owner_phone" icon="📞" edits={edits} onEdit={handleEdit} />
               <EditableField label="Email" value={null} fieldKey="owner_email" icon="📧" edits={edits} onEdit={handleEdit} />
               <EditableField label="Company" value={null} fieldKey="owner_company" icon="🏢" edits={edits} onEdit={handleEdit} />
