@@ -1719,8 +1719,8 @@ export function Map({
     setClassifyResult(null)
   }, [])
 
-  // 3D View — create/destroy Google Maps 3D element when show3D toggles
-  // Uses Google Photorealistic 3D Tiles — most recent aerial + 3D buildings
+  // 3D View — create/destroy Google Maps satellite with tilt when show3D toggles
+  // Uses standard Google Maps JS API (already loaded) — satellite + 45deg imagery + 3D buildings
   useEffect(() => {
     if (!show3D) {
       // Destroy 3D element if exists
@@ -1731,50 +1731,44 @@ export function Map({
       return
     }
 
-    const init3D = async () => {
-      if (!map3dContainerRef.current || !mapRef.current) return
-
-      // Get current map center and zoom
-      const center = mapRef.current.getCenter()
-      const zoom = mapRef.current.getZoom()
-
-      // Convert Leaflet zoom to Google Maps 3D range (meters above ground)
-      // Higher zoom = closer to ground. At zoom 19, range ~1100m. At 20, ~550m.
-      const range = 591657550.5 / Math.pow(2, zoom)
-
-      try {
-        // Load Google Maps 3D library (requires v=alpha in script tag)
-        const maps3d = await (window as any).google.maps.importLibrary('maps3d')
-        const { Map3DElement } = maps3d
-
-        // Create the 3D map element — photorealistic 3D tiles with full aerial coverage
-        const map3d = new Map3DElement({
-          center: { lat: center.lat, lng: center.lng, altitude: 0 },
-          range: Math.max(range, 150), // At least 150m above ground
-          tilt: 60, // Tilted view to see 3D buildings
-          heading: 0,
-        })
-
-        // Style: fill entire container
-        map3d.style.width = '100%'
-        map3d.style.height = '100%'
-
-        map3dContainerRef.current.innerHTML = ''
-        map3dContainerRef.current.appendChild(map3d)
-        map3dElementRef.current = map3d
-        console.log('3D View initialized — Google Photorealistic 3D Tiles (latest aerial)')
-      } catch (err) {
-        console.error('Failed to initialize 3D view:', err)
-        alert('3D View requires the Map Tiles API to be enabled in Google Cloud Console for your API key.')
-        setShow3D(false)
-      }
+    if (!(window as any).google?.maps) {
+      console.warn('Google Maps API not available for 3D view')
+      alert('Google Maps API not loaded. Refresh the page and try again.')
+      setShow3D(false)
+      return
     }
 
-    if ((window as any).google?.maps) {
-      init3D()
-    } else {
-      console.warn('Google Maps API not available for 3D view')
-      alert('Google Maps API not loaded. Check your API key.')
+    if (!map3dContainerRef.current || !mapRef.current) return
+
+    // Get current map center and zoom from Leaflet
+    const center = mapRef.current.getCenter()
+    const zoom = mapRef.current.getZoom()
+
+    try {
+      // Create a standard Google Map with satellite + tilt for 3D buildings
+      const gMap = new (window as any).google.maps.Map(map3dContainerRef.current, {
+        center: { lat: center.lat, lng: center.lng },
+        zoom: Math.min(Math.max(zoom, 15), 21),
+        mapTypeId: 'satellite',
+        tilt: 45,
+        heading: 0,
+        mapTypeControl: true,
+        mapTypeControlOptions: {
+          style: (window as any).google.maps.MapTypeControlStyle.DROPDOWN_MENU,
+          position: (window as any).google.maps.ControlPosition.TOP_RIGHT,
+        },
+        streetViewControl: true,
+        fullscreenControl: false,
+        zoomControl: true,
+        rotateControl: true,
+        gestureHandling: 'greedy',
+      })
+
+      map3dElementRef.current = gMap
+      console.log('3D Satellite View initialized — Google Maps with 45-degree aerial imagery')
+    } catch (err) {
+      console.error('Failed to initialize 3D satellite view:', err)
+      alert('Failed to load 3D view. Check the browser console for details.')
       setShow3D(false)
     }
   }, [show3D])
@@ -1818,14 +1812,15 @@ export function Map({
       )}
 
 
-      {/* 3D View toggle — show at zoom >= 19 */}
-      {currentZoom >= 19 && !show3D && (
+      {/* 3D View toggle — always visible */}
+      {!show3D && (
         <button
           onClick={() => setShow3D(true)}
-          className="absolute top-56 right-4 z-[1000] px-3 py-2 bg-white rounded-lg shadow-lg text-sm font-medium text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition-all"
-          title="Switch to 3D satellite view"
+          className="absolute top-20 right-4 z-[1000] px-4 py-3 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl shadow-lg text-base font-bold text-white hover:from-blue-500 hover:to-blue-700 transition-all border border-blue-400/30"
+          title="Switch to Google Maps 3D satellite view with tilted aerial imagery"
+          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
         >
-          🏗️ 3D View
+          🌐 3D Aerial
         </button>
       )}
 
@@ -1833,10 +1828,11 @@ export function Map({
       {show3D && (
         <button
           onClick={() => setShow3D(false)}
-          className="absolute top-4 left-4 z-[1000] px-4 py-2 bg-white rounded-lg shadow-lg text-sm font-bold text-gray-700 hover:bg-gray-100 transition-all flex items-center gap-2"
+          className="absolute top-4 left-16 z-[1000] px-5 py-3 bg-gradient-to-br from-gray-700 to-gray-900 rounded-xl shadow-xl text-base font-bold text-white hover:from-gray-600 hover:to-gray-800 transition-all flex items-center gap-2 border border-gray-500/30"
+          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
         >
-          <span>←</span>
-          <span>Back to 2D</span>
+          <span>🗺️</span>
+          <span>Back to 2D Map</span>
         </button>
       )}
 
