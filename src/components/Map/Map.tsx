@@ -469,14 +469,15 @@ export function Map({
     map.getPane('labelsPane')!.style.zIndex = '650'
     map.getPane('labelsPane')!.style.pointerEvents = 'none'
 
-    // Add street labels overlay - CartoDB light_only_labels
-    // White text designed for dark/satellite backgrounds
+    // Add street labels overlay - CartoDB dark_only_labels + CSS invert = bright white
+    // Dark text gets inverted to white via CSS filter on labelsPane
     const streetLabelsLayer = L.tileLayer(CARTO_DARK_LABELS_URL, {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       maxNativeZoom: 18,
       maxZoom: 22,
       opacity: 1,
       pane: 'labelsPane',
+      className: 'bright-labels-layer',
     })
     streetLabelsLayer.addTo(map)
     streetLabelsLayerRef.current = streetLabelsLayer
