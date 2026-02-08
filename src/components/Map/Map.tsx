@@ -722,9 +722,7 @@ export function Map({
     console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments, freeway routes stored: ${Object.keys(freewaySegments).sort().join(', ')}`)
   }, [roadGeometryData])
 
-  // Viewport-clamped freeway shields — repositioned on every map move
-  // Shields stick to the viewport edge when their freeway scrolls off-screen
-  // EXACTLY 2 shields per freeway route (user requirement)
+  // Viewport-clamped freeway shields -- 1 shield per freeway, centered on visible path
   interface ShieldPos { routeNum: string; x: number; y: number; isInterstate: boolean; name: string; clamped: boolean; idx: number }
   const [shieldPositions, setShieldPositions] = useState<ShieldPos[]>([])
 
@@ -737,7 +735,7 @@ export function Map({
     const mapSize = map.getSize()
     const W = mapSize.x
     const H = mapSize.y
-    const MARGIN = 40
+    const MARGIN = 30
     const shields: ShieldPos[] = []
 
     // Helper: screen distance between two points
@@ -752,12 +750,11 @@ export function Map({
       const name = FREEWAY_NAMES[routeNum] || `Route ${routeNum}`
 
       // Flatten all segments into ordered polyline points with screen coords
-      // Walk along the actual polyline geometry to preserve road order
       const pathPts: { lat: number; lng: number; x: number; y: number; cumDist: number }[] = []
       let cumDist = 0
 
       segments.forEach(seg => {
-        seg.forEach(([lat, lng], i) => {
+        seg.forEach(([lat, lng], _i) => {
           const pt = map.latLngToContainerPoint([lat, lng])
           if (pathPts.length > 0) {
             const prev = pathPts[pathPts.length - 1]
@@ -769,61 +766,26 @@ export function Map({
 
       if (pathPts.length === 0) return
 
-      // Find the visible portion of the polyline (points within viewport)
+      // Find the visible portion of the polyline
       const visiblePts = pathPts.filter(p => isVisible(p))
 
       if (visiblePts.length >= 2) {
-        // Calculate visible path length along the actual polyline order
+        // Single shield at 50% of visible path (centered)
         const firstVisible = visiblePts[0].cumDist
         const lastVisible = visiblePts[visiblePts.length - 1].cumDist
-        const visibleLength = lastVisible - firstVisible
+        const target50 = firstVisible + (lastVisible - firstVisible) * 0.5
 
-        // Find points at 33% and 67% of visible path distance
-        const target33 = firstVisible + visibleLength * 0.33
-        const target67 = firstVisible + visibleLength * 0.67
-
-        // Walk along all path points to find the closest to each target distance
-        let p1 = visiblePts[0]
-        let p2 = visiblePts[visiblePts.length - 1]
-        let best33 = Infinity
-        let best67 = Infinity
-
+        let mid = visiblePts[Math.floor(visiblePts.length / 2)]
+        let best50 = Infinity
         for (const pt of pathPts) {
-          const d33 = Math.abs(pt.cumDist - target33)
-          const d67 = Math.abs(pt.cumDist - target67)
-          if (d33 < best33 && isVisible(pt)) { best33 = d33; p1 = pt }
-          if (d67 < best67 && isVisible(pt)) { best67 = d67; p2 = pt }
+          const d = Math.abs(pt.cumDist - target50)
+          if (d < best50 && isVisible(pt)) { best50 = d; mid = pt }
         }
-
-        // Ensure minimum separation (120px)
-        const dist = screenDist(p1, p2)
-
-        if (dist >= 120) {
-          shields.push({
-            routeNum, isInterstate, name, clamped: false, idx: 0,
-            x: Math.max(MARGIN, Math.min(W - MARGIN, p1.x)),
-            y: Math.max(MARGIN, Math.min(H - MARGIN, p1.y)),
-          })
-          shields.push({
-            routeNum, isInterstate, name, clamped: false, idx: 1,
-            x: Math.max(MARGIN, Math.min(W - MARGIN, p2.x)),
-            y: Math.max(MARGIN, Math.min(H - MARGIN, p2.y)),
-          })
-        } else {
-          // Too close — single shield at 50% of visible path
-          const target50 = firstVisible + visibleLength * 0.5
-          let mid = visiblePts[Math.floor(visiblePts.length / 2)]
-          let best50 = Infinity
-          for (const pt of pathPts) {
-            const d = Math.abs(pt.cumDist - target50)
-            if (d < best50 && isVisible(pt)) { best50 = d; mid = pt }
-          }
-          shields.push({
-            routeNum, isInterstate, name, clamped: false, idx: 0,
-            x: Math.max(MARGIN, Math.min(W - MARGIN, mid.x)),
-            y: Math.max(MARGIN, Math.min(H - MARGIN, mid.y)),
-          })
-        }
+        shields.push({
+          routeNum, isInterstate, name, clamped: false, idx: 0,
+          x: Math.max(MARGIN, Math.min(W - MARGIN, mid.x)),
+          y: Math.max(MARGIN, Math.min(H - MARGIN, mid.y)),
+        })
       } else if (visiblePts.length === 1) {
         const p = visiblePts[0]
         shields.push({
@@ -832,7 +794,7 @@ export function Map({
           y: Math.max(MARGIN, Math.min(H - MARGIN, p.y)),
         })
       } else if (pathPts.length > 0) {
-        // Freeway is OFF-screen — clamp to nearest viewport edge
+        // Freeway OFF-screen -- clamp to nearest viewport edge
         const centerPt = map.getCenter()
         let closestPt = pathPts[0]
         let closestDist = Infinity
@@ -1880,22 +1842,6 @@ export function Map({
         <span>{activeLayerName}</span>
       </div>
 
-      {/* Property Status Legend */}
-      <div className="map-legend">
-        <h4>Property Status</h4>
-        <div className="legend-item">
-          <span className="legend-dot sale" />
-          <span>For Sale</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-dot lease" />
-          <span>For Lease</span>
-        </div>
-        <div className="legend-item">
-          <span className="legend-dot sold" />
-          <span>Sold (Comps)</span>
-        </div>
-      </div>
 
       {/* Zoom indicator */}
       <div className="absolute bottom-4 right-4 z-[1000] bg-white px-2 py-1 rounded shadow text-xs text-gray-600">

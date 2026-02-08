@@ -424,7 +424,6 @@ export function TopSearchBar({ onSelect, onSearchChange, sidebarOpen, onSearchRe
   return (
     <div
       className="top-search-bar"
-      style={{ left: sidebarOpen ? 256 : 56 }}
     >
       {/* Search mode selector */}
       <div className="relative flex-shrink-0" ref={modeDropdownRef}>

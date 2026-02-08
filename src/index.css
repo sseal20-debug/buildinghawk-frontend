@@ -281,16 +281,15 @@ body {
    Modeled after Google Maps / Mapbox satellite
    ============================================== */
 
-/* Street labels tile layer - refined inversion for satellite backgrounds
-   Softer than raw invert — reduces blown-out glow around text */
+/* Street labels tile layer - invert dark labels to bright white for satellite
+   IMPORTANT: Only apply filter ONCE (on container OR on img, not both - double invert cancels out) */
 .bright-labels-layer {
-  filter: invert(1) brightness(1.5) contrast(1.1) saturate(0);
-  opacity: 0.75;
+  /* No filter here - only apply to img children to avoid double-inversion */
+  opacity: 0.85;
 }
 
-.leaflet-labelsPane-pane img,
 .bright-labels-layer img {
-  filter: invert(1) brightness(1.5) contrast(1.1) saturate(0) !important;
+  filter: invert(1) brightness(2) contrast(1.5) saturate(0) !important;
 }
 
 /* ==============================================
@@ -418,21 +417,21 @@ body {
 
 /* Freeway name label above shield (React DOM overlay) */
 .freeway-name-label {
-  color: rgba(255, 255, 255, 0.92);
-  font-size: 8.5px;
-  font-weight: 600;
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 700;
   font-family: 'Inter', 'Roboto', -apple-system, sans-serif;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   text-shadow:
-    -1px -1px 0 rgba(0,0,0,0.9),
-     1px -1px 0 rgba(0,0,0,0.9),
-    -1px  1px 0 rgba(0,0,0,0.9),
-     1px  1px 0 rgba(0,0,0,0.9),
-     0    0  2px rgba(0,0,0,0.5);
+    -1px -1px 0 rgba(0,0,0,1),
+     1px -1px 0 rgba(0,0,0,1),
+    -1px  1px 0 rgba(0,0,0,1),
+     1px  1px 0 rgba(0,0,0,1),
+     0    0  4px rgba(0,0,0,0.8);
   white-space: nowrap;
   text-align: center;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
   pointer-events: none;
 }
 
@@ -873,21 +872,24 @@ body {
   display: none;
 }
 
-/* Top floating search bar */
+/* Top floating search bar - centered on map */
 .top-search-bar {
   position: absolute;
   top: 14px;
-  left: 256px;
-  right: 14px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 999;
   display: flex;
   align-items: center;
-  transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  justify-content: center;
+  width: 550px;
+  max-width: calc(100% - 120px);
   pointer-events: none;
 }
 
 .top-search-bar > * {
   pointer-events: auto;
+  width: 100%;
 }
 
 /* ---- MOBILE (< 768px) ---- */
@@ -925,8 +927,10 @@ body {
   }
 
   .top-search-bar {
-    left: 56px !important;
-    right: 10px;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    width: 90% !important;
+    max-width: 400px !important;
   }
 }
 
