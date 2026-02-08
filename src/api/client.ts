@@ -209,7 +209,7 @@ export interface CRMPropertyAutocomplete {
 
 // Parcels API
 export const parcelsApi = {
-  getInBounds: (bounds: { west: number; south: number; east: number; north: number }, limit = 2000) =>
+  getInBounds: (bounds: { west: number; south: number; east: number; north: number }, limit = 10000) =>
     request<import('@/types').ParcelFeatureCollection>(
       `/parcels?west=${bounds.west}&south=${bounds.south}&east=${bounds.east}&north=${bounds.north}&all=true&limit=${limit}`
     ),

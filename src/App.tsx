@@ -810,15 +810,67 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     })
   }, [])
 
-  // Handle layer toggle
+  // Handle layer toggle — toggles the layer AND opens its panel/search
   const handleLayerToggle = useCallback((key: string) => {
     setEnabledLayers(prev => {
       const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
+      const turningOn = !next.has(key)
+      if (turningOn) {
         next.add(key)
+      } else {
+        next.delete(key)
       }
+
+      // When toggling ON, activate the layer and open its panel
+      if (turningOn) {
+        setActiveLayer(key as LayerKey)
+        // Enable properties/land automatically based on layer
+        if (['listings', 'address', 'specs', 'type', 'comps', 'vacant', 'offmarket', 'newdev', 'condos'].includes(key)) {
+          setShowProperties(true)
+        }
+        if (key === 'crm') {
+          setShowProperties(true)
+          setShowLand(true)
+        }
+        // Toggle tenant labels for Layer 5
+        setShowTenantLabels(key === 'tenants')
+
+        // Open corresponding panel
+        const layerPanelMap: Partial<Record<string, PanelView>> = {
+          listings: 'hotsheet',
+          address: 'address',
+          type: 'type',
+          comps: 'comps',
+          vacant: 'vacant',
+          condos: 'condos',
+          offmarket: 'offmarket',
+          tenants: 'tenants',
+          owners: 'owners',
+          'buy-lease': 'requirements',
+          investor: 'investors',
+          looking: 'requirements',
+          clients: 'clients',
+          distressed: 'warn',
+          alerts: 'notifications',
+          crm: 'explorer',
+          stats: 'stats',
+        }
+        // Specs layer opens full-screen search page
+        if (key === 'specs') {
+          setPanelView('none')
+          setViewState({ type: 'search-fullscreen' })
+        } else {
+          const panel = layerPanelMap[key]
+          if (panel) {
+            setPanelView(panel)
+          }
+        }
+      } else {
+        // Toggling OFF — close the panel if it matches this layer
+        setPanelView('none')
+        if (key === 'tenants') setShowTenantLabels(false)
+      }
+
       return next
     })
   }, [])

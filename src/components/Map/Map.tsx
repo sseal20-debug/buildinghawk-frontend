@@ -1843,11 +1843,7 @@ export function Map({
         </button>
       )}
 
-      {/* Active Layer Badge */}
-      <div className="active-layer-badge">
-        <span className="pulse-dot" />
-        <span>{activeLayerName}</span>
-      </div>
+      {/* Active Layer Badge removed — layer state visible in sidebar */}
 
 
       {/* Zoom indicator */}
