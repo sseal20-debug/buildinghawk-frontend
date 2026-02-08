@@ -373,30 +373,24 @@ export function Map({
       tileLayerRef.current = null
     }
 
-    // Google Maps Satellite (HD) — dynamic import with safety check
+    // Google Maps Hybrid (satellite + labels) — thin vector labels from Google
     if (source === 'google') {
       if (typeof window !== 'undefined' && (window as any).google?.maps) {
         import('leaflet.gridlayer.googlemutant').then(() => {
-          // After import, the plugin adds googleMutant to L.gridLayer
           const googleLayer = (L.gridLayer as any).googleMutant({
-            type: 'satellite',
+            type: 'hybrid',  // satellite + Google's own labels
             maxZoom: 23,
           })
           googleLayer.addTo(map)
           tileLayerRef.current = googleLayer
-
-          // Show labels on top of Google satellite
-          if (streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
-            if (!map.hasLayer(streetLabelsLayerRef.current)) {
-              streetLabelsLayerRef.current.addTo(map)
-            }
-            if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
+          // Remove CartoDB labels — Google hybrid has its own
+          if (streetLabelsLayerRef.current && map.hasLayer(streetLabelsLayerRef.current)) {
+            map.removeLayer(streetLabelsLayerRef.current)
           }
-
+          if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
           setImagerySource('google')
         }).catch((err) => {
           console.warn('Failed to load GoogleMutant plugin, falling back to ESRI:', err)
-          // Fall back to ESRI
           const { url, attribution } = TILE_LAYERS.esri
           const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 20, maxZoom: 22, detectRetina: true })
           fallback.addTo(map)
@@ -461,31 +455,29 @@ export function Map({
     // Notify parent that map is ready
     onMapReady?.(map)
 
-    // Try Google Satellite HD as default (highest resolution in urban SoCal)
-    // Falls back to ESRI if Google Maps API not yet loaded
+    // Google Maps HYBRID as default — satellite imagery WITH Google's own thin vector labels
+    // This gives us clean, abbreviated street names (like "Columbia St") rendered by Google
+    // No need for separate CartoDB label tiles
     if (typeof window !== 'undefined' && (window as any).google?.maps) {
       import('leaflet.gridlayer.googlemutant').then(() => {
-        // Google Satellite HD — maxZoom 23 for highest available resolution
         const googleLayer = (L.gridLayer as any).googleMutant({
-          type: 'satellite',
+          type: 'hybrid',  // satellite + Google's own labels
           maxZoom: 23,
         })
         googleLayer.addTo(map)
         tileLayerRef.current = googleLayer
         setImagerySource('google')
-        // Bring labels and parcels to front over Google tiles
-        if (streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
-          if (!map.hasLayer(streetLabelsLayerRef.current)) streetLabelsLayerRef.current.addTo(map)
-          if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
-        }
-        console.log('Google Satellite HD loaded as default (maxZoom 23)')
+        if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
+        console.log('Google Hybrid loaded (satellite + vector labels)')
       }).catch((err) => {
-        console.warn('GoogleMutant failed, falling back to ESRI:', err)
+        console.warn('GoogleMutant failed, falling back to ESRI + CartoDB:', err)
         const { url, attribution } = TILE_LAYERS.esri
         const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 20, maxZoom: 22, detectRetina: true })
         fallback.addTo(map)
         tileLayerRef.current = fallback
         setImagerySource('esri')
+        // Only add CartoDB labels as fallback when Google isn't available
+        addCartoLabels(map)
       })
     } else {
       // ESRI fallback — Google API not loaded yet
@@ -494,47 +486,47 @@ export function Map({
       esriLayer.addTo(map)
       tileLayerRef.current = esriLayer
       setImagerySource('esri')
-      console.log('ESRI Satellite loaded (Google API not ready yet)')
-      // Try to swap to Google once API loads
+      // Add CartoDB labels for ESRI (since ESRI satellite has no labels)
+      addCartoLabels(map)
+      console.log('ESRI Satellite + CartoDB labels loaded (Google API not ready)')
+      // Try to swap to Google Hybrid once API loads
       const checkGoogle = setInterval(() => {
         if ((window as any).google?.maps) {
           clearInterval(checkGoogle)
           import('leaflet.gridlayer.googlemutant').then(() => {
             if (tileLayerRef.current) map.removeLayer(tileLayerRef.current)
-            const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 23 })
+            // Remove CartoDB labels — Google hybrid has its own
+            if (streetLabelsLayerRef.current && map.hasLayer(streetLabelsLayerRef.current)) {
+              map.removeLayer(streetLabelsLayerRef.current)
+            }
+            const googleLayer = (L.gridLayer as any).googleMutant({ type: 'hybrid', maxZoom: 23 })
             googleLayer.addTo(map)
             tileLayerRef.current = googleLayer
             setImagerySource('google')
-            if (streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
-              if (!map.hasLayer(streetLabelsLayerRef.current)) streetLabelsLayerRef.current.addTo(map)
-              if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
-            }
-            console.log('Swapped to Google Satellite HD after API loaded')
+            if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
+            console.log('Swapped to Google Hybrid after API loaded')
           }).catch(() => {})
         }
       }, 500)
-      // Stop checking after 10 seconds
       setTimeout(() => clearInterval(checkGoogle), 10000)
     }
 
-    // Create custom pane for bright street labels (higher z-index)
-    map.createPane('labelsPane')
-    map.getPane('labelsPane')!.style.zIndex = '650'
-    map.getPane('labelsPane')!.style.pointerEvents = 'none'
-    // No inline filter on labelsPane — CSS handles the inversion to avoid double-filter bloat
-
-    // Add street labels overlay - CartoDB dark_only_labels + CSS invert = bright white
-    // @2x retina tiles for crisper, thinner text
-    const streetLabelsLayer = L.tileLayer(CARTO_LABELS_URL.replace('{y}.png', '{y}@2x.png'), {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-      maxNativeZoom: 18,
-      maxZoom: 22,
-      opacity: 1,
-      pane: 'labelsPane',
-      className: 'bright-labels-layer',
-    })
-    streetLabelsLayer.addTo(map)
-    streetLabelsLayerRef.current = streetLabelsLayer
+    // Helper: add CartoDB labels (only used as fallback when Google isn't available)
+    function addCartoLabels(m: L.Map) {
+      m.createPane('labelsPane')
+      m.getPane('labelsPane')!.style.zIndex = '650'
+      m.getPane('labelsPane')!.style.pointerEvents = 'none'
+      const labelsLayer = L.tileLayer(CARTO_LABELS_URL.replace('{y}.png', '{y}@2x.png'), {
+        attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+        maxNativeZoom: 18,
+        maxZoom: 22,
+        opacity: 1,
+        pane: 'labelsPane',
+        className: 'bright-labels-layer',
+      })
+      labelsLayer.addTo(m)
+      streetLabelsLayerRef.current = labelsLayer
+    }
 
     // Create empty parcel layer with AQUA BLUE style
     const parcelLayer = L.geoJSON(undefined, {
@@ -680,17 +672,24 @@ export function Map({
     }
   }, []) // Empty deps - only run once on mount
 
-  // Show/hide street labels based on zoom level
+  // Show/hide CartoDB street labels based on zoom level (only when using ESRI, not Google Hybrid)
   useEffect(() => {
     const map = mapRef.current
     const streetLabelsLayer = streetLabelsLayerRef.current
     if (!map || !streetLabelsLayer) return
 
+    // Google Hybrid has built-in labels — don't show CartoDB labels
+    if (imagerySource === 'google') {
+      if (map.hasLayer(streetLabelsLayer)) {
+        map.removeLayer(streetLabelsLayer)
+      }
+      return
+    }
+
     if (currentZoom >= MIN_STREET_LABEL_ZOOM) {
       if (!map.hasLayer(streetLabelsLayer)) {
         streetLabelsLayer.addTo(map)
       }
-      // Keep parcels on top of labels
       if (parcelLayerRef.current) {
         parcelLayerRef.current.bringToFront()
       }
@@ -702,9 +701,10 @@ export function Map({
         map.removeLayer(streetLabelsLayer)
       }
     }
-  }, [currentZoom])
+  }, [currentZoom, imagerySource])
 
   // Render road overlays and freeway shields when geometry data loads from OpenStreetMap
+  // DISABLED when using Google Hybrid — Google already renders roads with proper labels
   useEffect(() => {
     const roadOverlayLayer = roadOverlayLayerRef.current
     const roadNameLabelsLayer = roadNameLabelsLayerRef.current
@@ -713,6 +713,12 @@ export function Map({
     // Clear existing overlays, labels, and shields
     roadOverlayLayer.clearLayers()
     roadNameLabelsLayer.clearLayers()
+
+    // Skip road overlays when using Google Hybrid (labels + roads built in)
+    if (imagerySource === 'google') {
+      console.log('Google Hybrid active — skipping custom road overlays')
+      return
+    }
 
     console.log(`Rendering ${roadGeometryData.features.length} road overlay segments`)
 
@@ -768,7 +774,7 @@ export function Map({
     freewayRoutesRef.current = freewaySegments
 
     console.log(`Road overlays rendered: ${roadGeometryData.features.length} segments, freeway routes stored: ${Object.keys(freewaySegments).sort().join(', ')}`)
-  }, [roadGeometryData])
+  }, [roadGeometryData, imagerySource])
 
   // Viewport-clamped freeway shields -- 1 shield per freeway, centered on visible path
   interface ShieldPos { routeNum: string; x: number; y: number; isInterstate: boolean; name: string; clamped: boolean; idx: number }
