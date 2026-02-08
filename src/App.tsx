@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from "react"
+import { useState, useCallback, useEffect, useRef, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { Map } from "./components/Map/Map"
 import { SearchPanel } from "./components/Search/SearchPanel"
@@ -11,9 +11,10 @@ import ParcelExplorer from "./components/ParcelExplorerClean"
 import { ParcelClassifier } from "./components/ParcelClassifier"
 import { LayerSidebar } from "./components/Sidebar"
 import type { LayerKey } from "./components/Sidebar"
+import type { ListingToggleKey } from "./components/Sidebar"
+import { LISTING_TOGGLES } from "./components/Sidebar"
 import { TopSearchBar } from "./components/Search/TopSearchBar"
 import { FullSearchPage } from "./components/Search/FullSearchPage"
-import type { QuickFilter } from "./components/Search/TopSearchBar"
 import L from 'leaflet'
 import { DocumentDrawer } from "./components/DocumentDrawer"
 import ListingDetailDrawer from "./components/Listings/ListingDetailDrawer"
@@ -28,7 +29,6 @@ import { LoginView } from "./pages/LoginView"
 import { PropertyContextMenu, type ContextMenuAction } from "./components/Map/PropertyContextMenu"
 import { PropertyCard } from "./components/Map/PropertyCard"
 import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMapApi } from "./api/client"
-import type { ListingMarker } from "./api/client"
 import { useDebounce } from "./hooks/useDebounce"
 import type { Parcel, SearchCriteria, SearchResultCollection, SavedSearch, CRMEntity } from "./types"
 import { SESSION_MAX_AGE_MS } from "./styles/theme"
@@ -620,8 +620,19 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   // Sidebar state — start closed on mobile so the map is visible
   const [activeLayer, setActiveLayer] = useState<LayerKey>('listings')
   const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768)
-  const [quickFilter, setQuickFilter] = useState<QuickFilter | null>('all')
   const [searchQuery, setSearchQuery] = useState('')
+
+  // Listing sub-toggle states (under "New Listings/Updates")
+  const [listingToggles, setListingToggles] = useState<Record<ListingToggleKey, boolean>>({
+    all: false, sale: false, escrow: false, sold: false, lease: false, leased: false
+  })
+
+  // Layer toggle states (all 28 layers can be toggled on/off)
+  const [enabledLayers, setEnabledLayers] = useState<Set<string>>(new Set())
+
+  // Search result APNs for parcel highlighting
+  const [searchApns, setSearchApns] = useState<string[]>([])
+
 
   // Context menu state
   const [contextMenuParcel, setContextMenuParcel] = useState<Parcel | null>(null)
@@ -635,8 +646,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   const [showClassifier, setShowClassifier] = useState(false)
   const [showTenantLabels, setShowTenantLabels] = useState(false)
   const mapComponentRef = useRef<{ getMap: () => L.Map | null } | null>(null)
-  const [selectedListing, setSelectedListing] = useState<ListingMarker | null>(null)
-  const [listingColorBy, setListingColorBy] = useState<'deal' | 'type' | 'city'>('deal')
+  const [selectedListing, setSelectedListing] = useState<any>(null)
   const [prospectFilter, setProspectFilter] = useState<Partial<CRMProspectFilter>>({})
   const [prospectFilterMenuPos, setProspectFilterMenuPos] = useState<{ x: number; y: number } | null>(null)
   // (CRM dropdown removed - now in sidebar)
@@ -688,15 +698,73 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     staleTime: 1000 * 60 * 10, // 10 minutes
   })
 
-  // Query for listing markers (inventory map layer)
-  const { data: listingMarkersData } = useQuery({
-    queryKey: ['listing-markers', quickFilter],
-    queryFn: () => listingsMapApi.getMarkers({
-      type: quickFilter === 'sale' ? 'sale' : quickFilter === 'lease' ? 'lease' : undefined,
-      status: quickFilter === 'sold' ? 'sold' : quickFilter === 'leased' ? 'leased' : quickFilter === 'escrow' ? 'escrow' : undefined,
-    }),
+  // Determine which listing toggles are ON — compute filter keys for the API
+  const activeListingToggleKeys = Object.entries(listingToggles)
+    .filter(([, on]) => on)
+    .map(([k]) => k as ListingToggleKey)
+
+  // Query for listing markers per active toggle (used to resolve lat/lng -> parcels)
+  const { data: listingMarkersForToggles } = useQuery({
+    queryKey: ['listing-markers-toggles', activeListingToggleKeys],
+    queryFn: async () => {
+      // If 'all' is on, fetch all markers in one call
+      if (listingToggles.all) {
+        const data = await listingsMapApi.getMarkers({})
+        return { all: data.markers }
+      }
+      // Otherwise fetch per toggle
+      const results: Record<string, any[]> = {}
+      for (const key of activeListingToggleKeys) {
+        const filter: any = {}
+        if (key === 'sale') filter.type = 'sale'
+        else if (key === 'lease') filter.type = 'lease'
+        else if (key === 'sold') filter.status = 'sold'
+        else if (key === 'leased') filter.status = 'leased'
+        else if (key === 'escrow') filter.status = 'escrow'
+        const data = await listingsMapApi.getMarkers(filter)
+        results[key] = data.markers
+      }
+      return results
+    },
+    enabled: activeListingToggleKeys.length > 0,
     staleTime: 1000 * 60 * 5,
   })
+
+  // Query parcels by lat/lng points from listing markers (for colored polygon rendering)
+  const { data: listingParcelsByToggle } = useQuery({
+    queryKey: ['listing-parcels-by-toggle', listingMarkersForToggles],
+    queryFn: async () => {
+      if (!listingMarkersForToggles) return {}
+      const result: Record<string, import('@/types').ParcelFeatureCollection> = {}
+      for (const [key, markers] of Object.entries(listingMarkersForToggles)) {
+        if (!markers || markers.length === 0) continue
+        const points = markers
+          .filter((m: any) => m.latitude && m.longitude)
+          .map((m: any) => ({ lat: m.latitude, lng: m.longitude }))
+          .slice(0, 200)
+        if (points.length === 0) continue
+        const parcels = await parcelsApi.getByPoints(points)
+        result[key] = parcels
+      }
+      return result
+    },
+    enabled: !!listingMarkersForToggles && Object.keys(listingMarkersForToggles).length > 0,
+    staleTime: 1000 * 60 * 5,
+  })
+
+  // Build listingHighlights array for Map from toggle parcel results
+  const listingHighlights = useMemo(() => {
+    if (!listingParcelsByToggle) return undefined
+    const toggleColorMap: Record<string, string> = {}
+    LISTING_TOGGLES.forEach(t => { toggleColorMap[t.key] = t.color })
+    const highlights: Array<{ color: string; geojson: import('@/types').ParcelFeatureCollection }> = []
+    for (const [key, geojson] of Object.entries(listingParcelsByToggle)) {
+      if (!geojson || !geojson.features?.length) continue
+      const color = toggleColorMap[key] || '#1565c0'
+      highlights.push({ color, geojson })
+    }
+    return highlights.length > 0 ? highlights : undefined
+  }, [listingParcelsByToggle])
 
   // Debounce the search query for street parcel highlighting (avoid hammering API)
   const debouncedStreetQuery = useDebounce(searchQuery, 400)
@@ -708,6 +776,52 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     enabled: debouncedStreetQuery.length >= 3,
     staleTime: 1000 * 30,
   })
+
+  // Query for search-result parcels (ALL search modes emit APNs -> highlight parcels)
+  const { data: searchParcels } = useQuery({
+    queryKey: ['search-parcels', searchApns],
+    queryFn: () => parcelsApi.getByApns(searchApns),
+    enabled: searchApns.length > 0,
+    staleTime: 1000 * 60,
+  })
+
+  // Handle search results from TopSearchBar (all modes emit APNs)
+  const handleSearchResults = useCallback((apns: string[]) => {
+    setSearchApns(apns)
+  }, [])
+
+  // Handle listing toggle change
+  const handleListingToggleChange = useCallback((key: ListingToggleKey, on: boolean) => {
+    setListingToggles(prev => {
+      const next = { ...prev }
+      if (key === 'all') {
+        // 'All' is mutually exclusive with individual toggles
+        if (on) {
+          return { all: true, sale: false, escrow: false, sold: false, lease: false, leased: false }
+        } else {
+          return { ...next, all: false }
+        }
+      } else {
+        // Individual toggle — turn off 'all' if any individual is turned on
+        next[key] = on
+        if (on) next.all = false
+        return next
+      }
+    })
+  }, [])
+
+  // Handle layer toggle
+  const handleLayerToggle = useCallback((key: string) => {
+    setEnabledLayers(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) {
+        next.delete(key)
+      } else {
+        next.add(key)
+      }
+      return next
+    })
+  }, [])
 
   // Combine CRM markers to show on map
   const crmMarkers: CRMEntity[] = [
@@ -1015,15 +1129,18 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           comps: 0,
           vacant: 0,
         }}
+        enabledLayers={enabledLayers}
+        onLayerToggle={handleLayerToggle}
+        listingToggles={listingToggles}
+        onListingToggleChange={handleListingToggleChange}
       />
 
-      {/* Top Search Bar + Quick Filters */}
+      {/* Top Search Bar */}
       <TopSearchBar
         onSelect={handleTopSearchSelect}
         onSearchChange={setSearchQuery}
         sidebarOpen={sidebarOpen}
-        activeFilter={quickFilter}
-        onFilterChange={setQuickFilter}
+        onSearchResults={handleSearchResults}
       />
 
       {/* Full-Screen Search Page (replaces map when active) */}
@@ -1031,7 +1148,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         <div
           className="flex-1 relative z-0 min-w-0 h-full overflow-hidden"
           style={{
-            marginLeft: sidebarOpen ? 280 : 0,
+            marginLeft: sidebarOpen ? 240 : 0,
             transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           }}
         >
@@ -1061,16 +1178,14 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             selectedApn={selectedParcel?.apn}
             center={mapCenter}
             selectedSearchLocation={selectedSearchLocation}
-            highlightedParcels={streetParcels}
+            highlightedParcels={searchParcels || streetParcels}
             crmMarkers={crmMarkers}
             onCRMMarkerClick={handleCRMMarkerClick}
             propertyMarkers={showProperties ? propertiesData : undefined}
             landMarkers={showLand ? landData : undefined}
             companyLabels={showTenantLabels ? companyLabelsData : undefined}
-            quickFilter={quickFilter}
-            listingMarkers={listingMarkersData?.markers}
-            onListingMarkerClick={(listing) => setSelectedListing(listing)}
-            listingColorBy={listingColorBy}
+            quickFilter="all"
+            listingHighlights={listingHighlights}
             onMapReady={(map) => {
               mapComponentRef.current = { getMap: () => map }
             }}

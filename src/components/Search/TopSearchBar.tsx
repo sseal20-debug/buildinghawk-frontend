@@ -21,8 +21,6 @@ interface AutocompleteResult {
   building_sf?: number
 }
 
-export type QuickFilter = 'all' | 'sale' | 'lease' | 'sold' | 'leased' | 'escrow'
-
 const SEARCH_MODES: { key: SearchMode; label: string; icon: string; desc: string; placeholder: string }[] = [
   { key: 'address',  label: 'Address',  icon: 'A',  desc: 'Property address',          placeholder: 'Search address, city, owner...' },
   { key: 'tenant',   label: 'Tenant',   icon: 'T',  desc: 'Company or tenant name',    placeholder: 'Search by tenant or company name...' },
@@ -34,11 +32,10 @@ interface TopSearchBarProps {
   onSelect: (result: { lat: number; lng: number; address: string }) => void
   onSearchChange: (query: string) => void
   sidebarOpen: boolean
-  activeFilter: QuickFilter | null
-  onFilterChange: (filter: QuickFilter | null) => void
+  onSearchResults?: (apns: string[]) => void
 }
 
-export function TopSearchBar({ onSelect, onSearchChange, sidebarOpen, activeFilter, onFilterChange }: TopSearchBarProps) {
+export function TopSearchBar({ onSelect, onSearchChange, sidebarOpen, onSearchResults }: TopSearchBarProps) {
   const [query, setQuery] = useState('')
   const [isOpen, setIsOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
@@ -250,6 +247,28 @@ export function TopSearchBar({ onSelect, onSearchChange, sidebarOpen, activeFilt
     return results
   }, [searchMode, crmResults, dbResults, placesResults, tenantResults, sicResults, selectedSicCode, sicTenantResults, sfResults])
 
+  // ── Emit APNs for parcel highlighting on map ──
+  useEffect(() => {
+    if (!onSearchResults) return
+
+    if (searchMode === 'sqft' && sfResults?.results) {
+      const apns = sfResults.results.map((b: BuildingSearchResult) => b.apn).filter(Boolean)
+      onSearchResults(apns)
+    } else if (searchMode === 'tenant' && tenantResults?.results) {
+      const apns = tenantResults.results
+        .map((t: TenantSearchResult) => (t as any).parcel_apn || (t as any).apn)
+        .filter(Boolean)
+      onSearchResults(apns)
+    } else if (searchMode === 'industry' && selectedSicCode && sicTenantResults?.results) {
+      const apns = sicTenantResults.results
+        .map((t: TenantSearchResult) => (t as any).parcel_apn || (t as any).apn)
+        .filter(Boolean)
+      onSearchResults(apns)
+    } else {
+      onSearchResults([])
+    }
+  }, [searchMode, sfResults, tenantResults, sicTenantResults, selectedSicCode, onSearchResults])
+
   // ── Handle result selection ──
   const handleSelect = useCallback(
     async (result: AutocompleteResult) => {
@@ -402,19 +421,10 @@ export function TopSearchBar({ onSelect, onSearchChange, sidebarOpen, activeFilt
     ? `SIC ${selectedSicCode} -- ${sicTenantResults?.total ?? 0} tenants found`
     : null
 
-  const filters: { key: QuickFilter; label: string; color: string; activeColor: string }[] = [
-    { key: 'all',    label: 'All',       color: 'bg-gray-100 text-gray-600 border-gray-300', activeColor: 'bg-[#1565c0] text-white border-[#1565c0]' },
-    { key: 'sale',   label: 'For Sale',  color: 'bg-red-50 text-red-700 border-red-200',     activeColor: 'bg-red-600 text-white border-red-600' },
-    { key: 'lease',  label: 'For Lease', color: 'bg-green-50 text-green-700 border-green-200', activeColor: 'bg-green-600 text-white border-green-600' },
-    { key: 'sold',   label: 'Sold',      color: 'bg-blue-50 text-blue-700 border-blue-200',  activeColor: 'bg-blue-600 text-white border-blue-600' },
-    { key: 'leased', label: 'Leased',    color: 'bg-purple-50 text-purple-700 border-purple-200', activeColor: 'bg-purple-600 text-white border-purple-600' },
-    { key: 'escrow', label: 'Escrow',    color: 'bg-amber-50 text-amber-700 border-amber-200', activeColor: 'bg-amber-600 text-white border-amber-600' },
-  ]
-
   return (
     <div
       className="top-search-bar"
-      style={{ left: sidebarOpen ? 296 : 56 }}
+      style={{ left: sidebarOpen ? 256 : 56 }}
     >
       {/* Search mode selector */}
       <div className="relative flex-shrink-0" ref={modeDropdownRef}>
@@ -595,23 +605,8 @@ export function TopSearchBar({ onSelect, onSearchChange, sidebarOpen, activeFilt
         )}
       </div>
 
-      {/* Quick filter pills */}
-      <div className="quick-filter-row flex items-center gap-1.5 ml-3 flex-shrink-0 flex-wrap">
-        {filters.map((f) => (
-          <button
-            key={f.key}
-            onClick={() => onFilterChange(activeFilter === f.key ? null : f.key)}
-            className={`px-3 py-1.5 rounded-full text-[11px] font-bold border shadow-sm whitespace-nowrap transition-all hover:scale-105 ${
-              activeFilter === f.key ? f.activeColor : f.color
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
     </div>
   )
 }
 
-export type { QuickFilter as TopQuickFilter }
 export default TopSearchBar

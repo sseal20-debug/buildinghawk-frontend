@@ -284,13 +284,13 @@ body {
 /* Street labels tile layer - refined inversion for satellite backgrounds
    Softer than raw invert — reduces blown-out glow around text */
 .bright-labels-layer {
-  filter: invert(1) brightness(1.8) contrast(1.4) saturate(0.1);
-  opacity: 0.85;
+  filter: invert(1) brightness(1.5) contrast(1.1) saturate(0);
+  opacity: 0.75;
 }
 
 .leaflet-labelsPane-pane img,
 .bright-labels-layer img {
-  filter: invert(1) brightness(1.8) contrast(1.4) saturate(0.1) !important;
+  filter: invert(1) brightness(1.5) contrast(1.1) saturate(0) !important;
 }
 
 /* ==============================================
@@ -632,7 +632,7 @@ body {
 
 .leaflet-popup-content {
   margin: 0 !important;
-  min-width: 280px !important;
+  min-width: 240px !important;
 }
 
 .popup-header {
@@ -834,7 +834,7 @@ body {
 
 /* Sidebar panel - slides in/out */
 .sidebar-panel {
-  width: 280px;
+  width: 240px;
   background: white;
   border-right: 1px solid #e5e7eb;
   display: flex;
@@ -877,7 +877,7 @@ body {
 .top-search-bar {
   position: absolute;
   top: 14px;
-  left: 296px;
+  left: 256px;
   right: 14px;
   z-index: 999;
   display: flex;
@@ -1431,20 +1431,4 @@ body {
 /* ========================================
    Listing SF Label Tooltips (Map Markers)
    ======================================== */
-.listing-sf-label {
-  font-size: 10px;
-  font-weight: bold;
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  padding: 0 !important;
-  color: #ffffff;
-  text-shadow:
-    -1px -1px 2px rgba(0, 0, 0, 0.8),
-     1px -1px 2px rgba(0, 0, 0, 0.8),
-    -1px  1px 2px rgba(0, 0, 0, 0.8),
-     1px  1px 2px rgba(0, 0, 0, 0.8);
-}
-.listing-sf-label::before {
-  display: none !important;
-}
+/* listing-sf-label removed — circleMarker bubbles replaced by parcel polygon highlighting */

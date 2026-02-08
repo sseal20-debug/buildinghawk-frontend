@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { parcelsApi, roadsApi, type PropertyMarker, type ParcelUnit, type RoadGeometry, type CompanyLabel, type ListingMarker } from '@/api/client'
+import { parcelsApi, roadsApi, type PropertyMarker, type ParcelUnit, type RoadGeometry, type CompanyLabel } from '@/api/client'
 import type { Parcel, ParcelFeature, CRMEntity } from '@/types'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -35,10 +35,8 @@ interface MapProps {
   quickFilter?: string | null
   // Active layer name for badge display
   activeLayerName?: string
-  // Listing markers for map overlay
-  listingMarkers?: ListingMarker[]
-  onListingMarkerClick?: (listing: ListingMarker) => void
-  listingColorBy?: 'deal' | 'type' | 'city'
+  // Listing parcel polygon highlights (colored by listing type toggle)
+  listingHighlights?: Array<{ color: string; geojson: import('@/types').ParcelFeatureCollection }>
 }
 
 // Orange County bounds - expanded for better panning
@@ -142,9 +140,7 @@ export function Map({
   quickFilter = null,
   onMapReady,
   activeLayerName = 'New Listings/Updates',
-  listingMarkers,
-  onListingMarkerClick,
-  listingColorBy = 'deal',
+  listingHighlights,
 }: MapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -477,11 +473,11 @@ export function Map({
     map.createPane('labelsPane')
     map.getPane('labelsPane')!.style.zIndex = '650'
     map.getPane('labelsPane')!.style.pointerEvents = 'none'
-    map.getPane('labelsPane')!.style.filter = 'invert(1) brightness(2.5) contrast(2)'
+    // No inline filter on labelsPane — CSS handles the inversion to avoid double-filter bloat
 
     // Add street labels overlay - CartoDB dark_only_labels + CSS invert = bright white
-    // Dark text gets inverted to white via CSS filter on labelsPane
-    const streetLabelsLayer = L.tileLayer(CARTO_DARK_LABELS_URL, {
+    // @2x retina tiles for crisper, thinner text
+    const streetLabelsLayer = L.tileLayer(CARTO_DARK_LABELS_URL.replace('{y}.png', '{y}@2x.png'), {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       maxNativeZoom: 18,
       maxZoom: 22,
@@ -741,45 +737,66 @@ export function Map({
     const mapSize = map.getSize()
     const W = mapSize.x
     const H = mapSize.y
-    const MARGIN = 40 // Keep shields this far from edge
+    const MARGIN = 40
     const shields: ShieldPos[] = []
 
+    // Helper: screen distance between two points
+    const screenDist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+      Math.sqrt((b.x - a.x) ** 2 + (b.y - a.y) ** 2)
+
+    // Helper: check if a screen point is within the viewport (with small buffer)
+    const isVisible = (p: { x: number; y: number }) =>
+      p.x >= -50 && p.x <= W + 50 && p.y >= -50 && p.y <= H + 50
+
     Object.entries(routes).forEach(([routeNum, { coords: segments, isInterstate }]) => {
-      // Collect all container-space points for this freeway
-      const allScreenPts: { x: number; y: number }[] = []
-      const allGeoPts: { lat: number; lng: number }[] = []
+      const name = FREEWAY_NAMES[routeNum] || `Route ${routeNum}`
+
+      // Flatten all segments into ordered polyline points with screen coords
+      // Walk along the actual polyline geometry to preserve road order
+      const pathPts: { lat: number; lng: number; x: number; y: number; cumDist: number }[] = []
+      let cumDist = 0
 
       segments.forEach(seg => {
-        seg.forEach(([lat, lng]) => {
-          allGeoPts.push({ lat, lng })
+        seg.forEach(([lat, lng], i) => {
           const pt = map.latLngToContainerPoint([lat, lng])
-          allScreenPts.push({ x: pt.x, y: pt.y })
+          if (pathPts.length > 0) {
+            const prev = pathPts[pathPts.length - 1]
+            cumDist += screenDist(prev, pt)
+          }
+          pathPts.push({ lat, lng, x: pt.x, y: pt.y, cumDist })
         })
       })
 
-      const name = FREEWAY_NAMES[routeNum] || `Route ${routeNum}`
+      if (pathPts.length === 0) return
 
-      // Filter to points inside viewport
-      const visiblePts = allScreenPts.filter(p => p.x >= -50 && p.x <= W + 50 && p.y >= -50 && p.y <= H + 50)
+      // Find the visible portion of the polyline (points within viewport)
+      const visiblePts = pathPts.filter(p => isVisible(p))
 
       if (visiblePts.length >= 2) {
-        // Freeway IS visible — place 2 shields at ~33% and ~66% along the visible extent
-        // Sort by combined x+y distance from top-left to get a rough ordering along the road
-        const sorted = [...visiblePts].sort((a, b) => {
-          const distA = Math.sqrt(a.x * a.x + a.y * a.y)
-          const distB = Math.sqrt(b.x * b.x + b.y * b.y)
-          return distA - distB
-        })
+        // Calculate visible path length along the actual polyline order
+        const firstVisible = visiblePts[0].cumDist
+        const lastVisible = visiblePts[visiblePts.length - 1].cumDist
+        const visibleLength = lastVisible - firstVisible
 
-        const i1 = Math.floor(sorted.length * 0.33)
-        const i2 = Math.floor(sorted.length * 0.67)
-        const p1 = sorted[i1]
-        const p2 = sorted[i2]
+        // Find points at 33% and 67% of visible path distance
+        const target33 = firstVisible + visibleLength * 0.33
+        const target67 = firstVisible + visibleLength * 0.67
 
-        // Ensure minimum separation between 2 shields (at least 120px apart)
-        const dx = p2.x - p1.x
-        const dy = p2.y - p1.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
+        // Walk along all path points to find the closest to each target distance
+        let p1 = visiblePts[0]
+        let p2 = visiblePts[visiblePts.length - 1]
+        let best33 = Infinity
+        let best67 = Infinity
+
+        for (const pt of pathPts) {
+          const d33 = Math.abs(pt.cumDist - target33)
+          const d67 = Math.abs(pt.cumDist - target67)
+          if (d33 < best33 && isVisible(pt)) { best33 = d33; p1 = pt }
+          if (d67 < best67 && isVisible(pt)) { best67 = d67; p2 = pt }
+        }
+
+        // Ensure minimum separation (120px)
+        const dist = screenDist(p1, p2)
 
         if (dist >= 120) {
           shields.push({
@@ -793,8 +810,14 @@ export function Map({
             y: Math.max(MARGIN, Math.min(H - MARGIN, p2.y)),
           })
         } else {
-          // Too close — just place one at midpoint
-          const mid = sorted[Math.floor(sorted.length / 2)]
+          // Too close — single shield at 50% of visible path
+          const target50 = firstVisible + visibleLength * 0.5
+          let mid = visiblePts[Math.floor(visiblePts.length / 2)]
+          let best50 = Infinity
+          for (const pt of pathPts) {
+            const d = Math.abs(pt.cumDist - target50)
+            if (d < best50 && isVisible(pt)) { best50 = d; mid = pt }
+          }
           shields.push({
             routeNum, isInterstate, name, clamped: false, idx: 0,
             x: Math.max(MARGIN, Math.min(W - MARGIN, mid.x)),
@@ -802,19 +825,18 @@ export function Map({
           })
         }
       } else if (visiblePts.length === 1) {
-        // Only one point visible — single shield, clamped to viewport
         const p = visiblePts[0]
         shields.push({
           routeNum, isInterstate, name, clamped: false, idx: 0,
           x: Math.max(MARGIN, Math.min(W - MARGIN, p.x)),
           y: Math.max(MARGIN, Math.min(H - MARGIN, p.y)),
         })
-      } else if (allGeoPts.length > 0) {
+      } else if (pathPts.length > 0) {
         // Freeway is OFF-screen — clamp to nearest viewport edge
         const centerPt = map.getCenter()
-        let closestPt = allGeoPts[0]
+        let closestPt = pathPts[0]
         let closestDist = Infinity
-        allGeoPts.forEach(p => {
+        pathPts.forEach(p => {
           const d = Math.abs(p.lat - centerPt.lat) + Math.abs(p.lng - centerPt.lng)
           if (d < closestDist) { closestDist = d; closestPt = p }
         })
@@ -1602,87 +1624,54 @@ export function Map({
     }
   }, [parcelUnitsData, parcelsData, currentZoom]) // Re-render when data or zoom changes
 
-  // Handle listing markers layer
+  // Render listing parcel polygon highlights (colored by listing type toggle)
   useEffect(() => {
     const layer = listingLayerRef.current
     if (!layer) return
-
-    // Clear existing markers
     layer.clearLayers()
 
-    if (!listingMarkers || listingMarkers.length === 0) return
+    if (!listingHighlights || listingHighlights.length === 0) return
 
-    // Simple string hash for city-based coloring
-    const hashStr = (s: string): number => {
-      let h = 0
-      for (let i = 0; i < s.length; i++) {
-        h = ((h << 5) - h + s.charCodeAt(i)) | 0
-      }
-      return Math.abs(h)
-    }
+    listingHighlights.forEach(({ color, geojson }) => {
+      if (!geojson?.features) return
+      geojson.features.forEach((feature: ParcelFeature) => {
+        try {
+          if (!feature.geometry) return
+          const geoLayer = L.geoJSON({
+            type: 'Feature',
+            geometry: feature.geometry,
+            properties: feature.properties || {},
+          } as GeoJSON.Feature, {
+            style: () => ({
+              color: color,
+              weight: 3,
+              opacity: 1,
+              fillColor: color,
+              fillOpacity: 0.3,
+            }),
+          })
 
-    const getColor = (listing: ListingMarker): string => {
-      switch (listingColorBy) {
-        case 'deal': {
-          const lt = (listing.listing_type || '').toLowerCase()
-          if (lt.includes('sale')) return '#2563eb'
-          if (lt.includes('lease')) return '#16a34a'
-          if (lt.includes('sold')) return '#6b7280'
-          return '#6b7280'
-        }
-        case 'type': {
-          const pt = (listing.property_type || '').toLowerCase()
-          if (pt.includes('industrial')) return '#0d9488'
-          if (pt.includes('flex') || pt.includes('r&d')) return '#be185d'
-          if (pt.includes('land')) return '#7c3aed'
-          return '#ea580c'
-        }
-        case 'city': {
-          const hue = hashStr(listing.city || 'unknown') % 360
-          return `hsl(${hue}, 70%, 50%)`
-        }
-        default:
-          return '#2563eb'
-      }
-    }
+          geoLayer.on('click', () => {
+            const props = feature.properties
+            if (props && onParcelSelectRef.current) {
+              onParcelSelectRef.current({
+                apn: feature.id as string || props.apn,
+                situs_address: props.address,
+                city: props.city,
+                zip: props.zip,
+                land_sf: props.land_sf,
+                zoning: props.zoning,
+              } as Parcel)
+            }
+          })
 
-    listingMarkers.forEach((listing) => {
-      const lat = listing.latitude
-      const lng = listing.longitude
-      if (!lat || !lng) return
-
-      const color = getColor(listing)
-
-      const marker = L.circleMarker([lat, lng], {
-        radius: 8,
-        color: color,
-        fillColor: color,
-        weight: 2,
-        fillOpacity: 0.8,
-      })
-
-      // Add permanent SF label tooltip
-      const sf = listing.sf
-      if (sf && sf > 0) {
-        const sfLabel = sf >= 1000 ? `${(sf / 1000).toFixed(sf >= 10000 ? 0 : 1)}k SF` : `${sf.toLocaleString()} SF`
-        marker.bindTooltip(sfLabel, {
-          permanent: true,
-          direction: 'top',
-          className: 'listing-sf-label',
-          offset: [0, -6],
-        })
-      }
-
-      marker.on('click', (e: L.LeafletMouseEvent) => {
-        L.DomEvent.stopPropagation(e)
-        if (onListingMarkerClick) {
-          onListingMarkerClick(listing)
+          layer.addLayer(geoLayer)
+        } catch (_e) {
+          // Skip invalid geometries
         }
       })
-
-      layer.addLayer(marker)
     })
-  }, [listingMarkers, listingColorBy])
+  }, [listingHighlights])
 
   // Handle polygon draw events with current drawMode
   useEffect(() => {

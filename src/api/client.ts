@@ -229,6 +229,17 @@ export const parcelsApi = {
       `/parcels/search-street?street=${encodeURIComponent(street)}&limit=${limit}`
     ),
 
+  // Get parcels by a list of APNs (returns GeoJSON FeatureCollection)
+  getByApns: (apns: string[]) =>
+    request<import('@/types').ParcelFeatureCollection>(
+      `/parcels/by-apns?apns=${apns.map(encodeURIComponent).join(',')}`
+    ),
+
+  getByPoints: (points: Array<{ lat: number; lng: number }>) =>
+    request<import('@/types').ParcelFeatureCollection>(
+      `/parcels/by-points?points=${points.map(p => `${p.lat},${p.lng}`).join('|')}`
+    ),
+
   getByApn: (apn: string) =>
     request<import('@/types').Parcel>(`/parcels/${encodeURIComponent(apn)}`),
 
