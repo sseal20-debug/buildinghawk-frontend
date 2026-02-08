@@ -287,16 +287,15 @@ body {
    Modeled after Google Maps / Mapbox satellite
    ============================================== */
 
-/* Street labels tile layer -- bright white text on satellite
-   CartoDB dark_only_labels are dark grey by default.
-   Invert ONLY the img tiles (not container) to get crisp white text.
-   brightness(2) + contrast(1.5) makes them pop on satellite imagery. */
+/* Street labels tile layer -- CartoDB light_only_labels
+   Native white/light text on transparent background.
+   No CSS filter needed -- renders clean and crisp like Google Maps labels. */
 .bright-labels-layer {
   opacity: 1;
 }
 
 .bright-labels-layer img {
-  filter: invert(1) brightness(2) contrast(1.5);
+  /* No filter -- light_only_labels are already white */
 }
 
 /* ==============================================

@@ -525,7 +525,7 @@ export function Map({
 
     // Add street labels overlay - CartoDB dark_only_labels + CSS invert = bright white
     // @2x retina tiles for crisper, thinner text
-    const streetLabelsLayer = L.tileLayer(CARTO_DARK_LABELS_URL.replace('{y}.png', '{y}@2x.png'), {
+    const streetLabelsLayer = L.tileLayer(CARTO_LABELS_URL.replace('{y}.png', '{y}@2x.png'), {
       attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
       maxNativeZoom: 18,
       maxZoom: 22,
@@ -1880,31 +1880,34 @@ export function Map({
         style={{ display: show3D ? 'block' : 'none' }}
       />
 
-      {/* Viewport-Clamped Freeway Shields — portaled into Leaflet container for correct z-stacking */}
-      {shieldPaneReady && shieldContainerRef.current && createPortal(
-        <>
-          {shieldPositions.map((s) => (
-            <div
-              key={`${s.routeNum}-${s.idx}`}
-              className="absolute pointer-events-none"
-              style={{
-                left: s.x,
-                top: s.y,
-                transform: 'translate(-50%, -50%)',
-                opacity: s.clamped ? 0.5 : 1,
-              }}
-            >
-              {/* Freeway name label above shield */}
-              <div className="freeway-name-label">{s.name}</div>
-              {/* Shield icon */}
-              <div className={`freeway-shield ${s.isInterstate ? 'interstate' : 'ca-state'}`}>
-                <div className="shield-inner">{s.routeNum}</div>
+      {/* Viewport-Clamped Freeway Shields — DISABLED for now (remove SHOW_SHIELDS check to re-enable) */}
+      {(() => {
+        const SHOW_SHIELDS = false
+        if (!SHOW_SHIELDS) return null
+        if (!shieldPaneReady || !shieldContainerRef.current) return null
+        return createPortal(
+          <>
+            {shieldPositions.map((s) => (
+              <div
+                key={`${s.routeNum}-${s.idx}`}
+                className="absolute pointer-events-none"
+                style={{
+                  left: s.x,
+                  top: s.y,
+                  transform: 'translate(-50%, -50%)',
+                  opacity: s.clamped ? 0.5 : 1,
+                }}
+              >
+                <div className="freeway-name-label">{s.name}</div>
+                <div className={`freeway-shield ${s.isInterstate ? 'interstate' : 'ca-state'}`}>
+                  <div className="shield-inner">{s.routeNum}</div>
+                </div>
               </div>
-            </div>
-          ))}
-        </>,
-        shieldContainerRef.current
-      )}
+            ))}
+          </>,
+          shieldContainerRef.current
+        )
+      })()}
 
 
       {/* Imagery source toggle — small button in top-right (below search bar) */}
