@@ -380,7 +380,7 @@ export function Map({
           // After import, the plugin adds googleMutant to L.gridLayer
           const googleLayer = (L.gridLayer as any).googleMutant({
             type: 'satellite',
-            maxZoom: 21,
+            maxZoom: 23,
           })
           googleLayer.addTo(map)
           tileLayerRef.current = googleLayer
@@ -398,7 +398,7 @@ export function Map({
           console.warn('Failed to load GoogleMutant plugin, falling back to ESRI:', err)
           // Fall back to ESRI
           const { url, attribution } = TILE_LAYERS.esri
-          const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
+          const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 20, maxZoom: 22, detectRetina: true })
           fallback.addTo(map)
           tileLayerRef.current = fallback
           setImagerySource('esri')
@@ -406,7 +406,7 @@ export function Map({
       } else {
         console.warn('Google Maps API not loaded yet, falling back to ESRI')
         const { url, attribution } = TILE_LAYERS.esri
-        const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
+        const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 20, maxZoom: 22, detectRetina: true })
         fallback.addTo(map)
         tileLayerRef.current = fallback
         setImagerySource('esri')
@@ -418,7 +418,7 @@ export function Map({
     const { url, attribution } = TILE_LAYERS.esri
     const newTileLayer = L.tileLayer(url, {
       attribution,
-      maxNativeZoom: 19,
+      maxNativeZoom: 20,
       maxZoom: 22,
       detectRetina: true,
     })
@@ -461,13 +461,61 @@ export function Map({
     // Notify parent that map is ready
     onMapReady?.(map)
 
-    // Add ESRI satellite as default — always available, always works
-    const { url: esriUrl, attribution: esriAttrib } = TILE_LAYERS.esri
-    const esriLayer = L.tileLayer(esriUrl, { attribution: esriAttrib, maxNativeZoom: 19, maxZoom: 22, detectRetina: true })
-    esriLayer.addTo(map)
-    tileLayerRef.current = esriLayer
-    setImagerySource('esri')
-    console.log('ESRI Satellite loaded as default aerial imagery')
+    // Try Google Satellite HD as default (highest resolution in urban SoCal)
+    // Falls back to ESRI if Google Maps API not yet loaded
+    if (typeof window !== 'undefined' && (window as any).google?.maps) {
+      import('leaflet.gridlayer.googlemutant').then(() => {
+        // Google Satellite HD — maxZoom 23 for highest available resolution
+        const googleLayer = (L.gridLayer as any).googleMutant({
+          type: 'satellite',
+          maxZoom: 23,
+        })
+        googleLayer.addTo(map)
+        tileLayerRef.current = googleLayer
+        setImagerySource('google')
+        // Bring labels and parcels to front over Google tiles
+        if (streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
+          if (!map.hasLayer(streetLabelsLayerRef.current)) streetLabelsLayerRef.current.addTo(map)
+          if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
+        }
+        console.log('Google Satellite HD loaded as default (maxZoom 23)')
+      }).catch((err) => {
+        console.warn('GoogleMutant failed, falling back to ESRI:', err)
+        const { url, attribution } = TILE_LAYERS.esri
+        const fallback = L.tileLayer(url, { attribution, maxNativeZoom: 20, maxZoom: 22, detectRetina: true })
+        fallback.addTo(map)
+        tileLayerRef.current = fallback
+        setImagerySource('esri')
+      })
+    } else {
+      // ESRI fallback — Google API not loaded yet
+      const { url: esriUrl, attribution: esriAttrib } = TILE_LAYERS.esri
+      const esriLayer = L.tileLayer(esriUrl, { attribution: esriAttrib, maxNativeZoom: 20, maxZoom: 22, detectRetina: true })
+      esriLayer.addTo(map)
+      tileLayerRef.current = esriLayer
+      setImagerySource('esri')
+      console.log('ESRI Satellite loaded (Google API not ready yet)')
+      // Try to swap to Google once API loads
+      const checkGoogle = setInterval(() => {
+        if ((window as any).google?.maps) {
+          clearInterval(checkGoogle)
+          import('leaflet.gridlayer.googlemutant').then(() => {
+            if (tileLayerRef.current) map.removeLayer(tileLayerRef.current)
+            const googleLayer = (L.gridLayer as any).googleMutant({ type: 'satellite', maxZoom: 23 })
+            googleLayer.addTo(map)
+            tileLayerRef.current = googleLayer
+            setImagerySource('google')
+            if (streetLabelsLayerRef.current && map.getZoom() >= MIN_STREET_LABEL_ZOOM) {
+              if (!map.hasLayer(streetLabelsLayerRef.current)) streetLabelsLayerRef.current.addTo(map)
+              if (parcelLayerRef.current) parcelLayerRef.current.bringToFront()
+            }
+            console.log('Swapped to Google Satellite HD after API loaded')
+          }).catch(() => {})
+        }
+      }, 500)
+      // Stop checking after 10 seconds
+      setTimeout(() => clearInterval(checkGoogle), 10000)
+    }
 
     // Create custom pane for bright street labels (higher z-index)
     map.createPane('labelsPane')
@@ -1726,11 +1774,50 @@ export function Map({
     setClassifyResult(null)
   }, [])
 
+  // Auto-switch to 3D Google Maps when Leaflet zoom >= 21
+  // Auto-switch back to Leaflet satellite when Google zoom <= 20
+  const auto3dThreshold = 21
+  const show3DRef = useRef(show3D)
+  show3DRef.current = show3D
+
+  // Listen for Leaflet zoom changes — enter 3D at zoom 21+
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map) return
+
+    const handleZoomEnd = () => {
+      const zoom = map.getZoom()
+      if (zoom >= auto3dThreshold && !show3DRef.current) {
+        // Check Google API available before entering 3D
+        if ((window as any).google?.maps) {
+          setShow3D(true)
+        }
+      }
+    }
+
+    map.on('zoomend', handleZoomEnd)
+    return () => { map.off('zoomend', handleZoomEnd) }
+  }, [])
+
   // 3D View — create/destroy Google Maps satellite with tilt when show3D toggles
-  // Uses standard Google Maps JS API (already loaded) — satellite + 45deg imagery + 3D buildings
   useEffect(() => {
     if (!show3D) {
-      // Destroy 3D element if exists
+      // Sync position from Google 3D back to Leaflet before destroying
+      if (map3dElementRef.current && mapRef.current) {
+        try {
+          const gCenter = map3dElementRef.current.getCenter()
+          const gZoom = map3dElementRef.current.getZoom()
+          if (gCenter && gZoom != null) {
+            // Clamp Leaflet zoom to 20 (below 3D threshold) to avoid re-triggering 3D
+            mapRef.current.setView(
+              [gCenter.lat(), gCenter.lng()],
+              Math.min(gZoom, auto3dThreshold - 1),
+              { animate: false }
+            )
+          }
+        } catch (_e) { /* ignore sync errors */ }
+      }
+      // Destroy 3D element
       if (map3dElementRef.current && map3dContainerRef.current) {
         map3dContainerRef.current.innerHTML = ''
         map3dElementRef.current = null
@@ -1739,8 +1826,6 @@ export function Map({
     }
 
     if (!(window as any).google?.maps) {
-      console.warn('Google Maps API not available for 3D view')
-      alert('Google Maps API not loaded. Refresh the page and try again.')
       setShow3D(false)
       return
     }
@@ -1755,27 +1840,30 @@ export function Map({
       // Create a standard Google Map with satellite + tilt for 3D buildings
       const gMap = new (window as any).google.maps.Map(map3dContainerRef.current, {
         center: { lat: center.lat, lng: center.lng },
-        zoom: Math.min(Math.max(zoom, 15), 21),
+        zoom: Math.min(Math.max(zoom, 15), 23),
         mapTypeId: 'satellite',
         tilt: 45,
         heading: 0,
-        mapTypeControl: true,
-        mapTypeControlOptions: {
-          style: (window as any).google.maps.MapTypeControlStyle.DROPDOWN_MENU,
-          position: (window as any).google.maps.ControlPosition.TOP_RIGHT,
-        },
-        streetViewControl: true,
+        mapTypeControl: false,
+        streetViewControl: false,
         fullscreenControl: false,
         zoomControl: true,
         rotateControl: true,
         gestureHandling: 'greedy',
       })
 
+      // Listen for zoom changes in Google Map — exit 3D when zoom <= 20
+      gMap.addListener('zoom_changed', () => {
+        const gZoom = gMap.getZoom()
+        if (gZoom != null && gZoom < auto3dThreshold) {
+          setShow3D(false)
+        }
+      })
+
       map3dElementRef.current = gMap
-      console.log('3D Satellite View initialized — Google Maps with 45-degree aerial imagery')
+      console.log('Auto-entered 3D view at zoom', zoom)
     } catch (err) {
       console.error('Failed to initialize 3D satellite view:', err)
-      alert('Failed to load 3D view. Check the browser console for details.')
       setShow3D(false)
     }
   }, [show3D])
@@ -1819,27 +1907,14 @@ export function Map({
       )}
 
 
-      {/* 3D View toggle — always visible */}
+      {/* Imagery source toggle — small button in top-right (below search bar) */}
       {!show3D && (
         <button
-          onClick={() => setShow3D(true)}
-          className="absolute top-20 right-4 z-[1000] px-4 py-3 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl shadow-lg text-base font-bold text-white hover:from-blue-500 hover:to-blue-700 transition-all border border-blue-400/30"
-          title="Switch to Google Maps 3D satellite view with tilted aerial imagery"
-          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
+          onClick={() => switchImagery(imagerySourceRef.current === 'google' ? 'esri' : 'google')}
+          className="absolute top-20 right-4 z-[1000] px-3 py-2 bg-black/70 hover:bg-black/85 rounded-lg shadow-lg text-xs font-bold text-white transition-all border border-white/20"
+          title={`Switch to ${imagerySourceRef.current === 'google' ? 'ESRI' : 'Google HD'} satellite imagery`}
         >
-          🌐 3D Aerial
-        </button>
-      )}
-
-      {/* Back to 2D button — show when 3D is active */}
-      {show3D && (
-        <button
-          onClick={() => setShow3D(false)}
-          className="absolute top-4 left-16 z-[1000] px-5 py-3 bg-gradient-to-br from-gray-700 to-gray-900 rounded-xl shadow-xl text-base font-bold text-white hover:from-gray-600 hover:to-gray-800 transition-all flex items-center gap-2 border border-gray-500/30"
-          style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
-        >
-          <span>🛰️</span>
-          <span>Back to Satellite</span>
+          {imagerySourceRef.current === 'google' ? 'ESRI' : 'Google HD'}
         </button>
       )}
 

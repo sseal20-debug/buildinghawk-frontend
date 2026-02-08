@@ -241,6 +241,12 @@ body {
   pointer-events: auto;
 }
 
+/* Satellite tile sharpening -- subtle contrast/saturation boost for crisper imagery */
+.leaflet-tile-pane img:not(.bright-labels-layer img) {
+  image-rendering: auto;
+  filter: contrast(1.03) saturate(1.08);
+}
+
 /* Custom CRM marker styling */
 .custom-crm-marker {
   background: transparent !important;
