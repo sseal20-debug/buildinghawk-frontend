@@ -1148,7 +1148,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         <div
           className="flex-1 relative z-0 min-w-0 h-full overflow-hidden"
           style={{
-            marginLeft: sidebarOpen ? 240 : 0,
+            marginLeft: sidebarOpen ? 160 : 0,
             transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           }}
         >
@@ -1184,7 +1184,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             propertyMarkers={showProperties ? propertiesData : undefined}
             landMarkers={showLand ? landData : undefined}
             companyLabels={showTenantLabels ? companyLabelsData : undefined}
-            quickFilter="all"
+            quickFilter={listingToggles.all ? 'all' : null}
             listingHighlights={listingHighlights}
             onMapReady={(map) => {
               mapComponentRef.current = { getMap: () => map }

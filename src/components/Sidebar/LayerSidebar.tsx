@@ -45,7 +45,7 @@ interface LayerSidebarProps {
 }
 
 const LISTING_TOGGLES: ListingToggleConfig[] = [
-  { key: 'all', label: 'All', color: '#1565c0' },
+  { key: 'all', label: 'All', color: '#00D4FF' },
   { key: 'sale', label: 'For Sale', color: '#dc2626' },
   { key: 'escrow', label: 'Escrow', color: '#d97706' },
   { key: 'sold', label: 'Sold', color: '#2563eb' },

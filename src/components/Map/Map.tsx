@@ -212,8 +212,8 @@ export function Map({
     },
   })
 
-  // Minimum zoom level to show parcel layers
-  const MIN_PARCEL_ZOOM = 14
+  // Minimum zoom level to show parcel layers (toggle-driven from zoom 11)
+  const MIN_PARCEL_ZOOM = 11
 
   // Fetch single parcel at search location (when selected)
   const { data: selectedParcelData } = useQuery({
@@ -749,11 +749,18 @@ export function Map({
     Object.entries(routes).forEach(([routeNum, { coords: segments, isInterstate }]) => {
       const name = FREEWAY_NAMES[routeNum] || `Route ${routeNum}`
 
+      // Sort segments by starting latitude for geographic continuity
+      const sortedSegs = [...segments].sort((a, b) => {
+        const aLat = a[0]?.[0] ?? 0
+        const bLat = b[0]?.[0] ?? 0
+        return bLat - aLat // North to south
+      })
+
       // Flatten all segments into ordered polyline points with screen coords
       const pathPts: { lat: number; lng: number; x: number; y: number; cumDist: number }[] = []
       let cumDist = 0
 
-      segments.forEach(seg => {
+      sortedSegs.forEach(seg => {
         seg.forEach(([lat, lng], _i) => {
           const pt = map.latLngToContainerPoint([lat, lng])
           if (pathPts.length > 0) {

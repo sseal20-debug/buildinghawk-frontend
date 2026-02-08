@@ -473,8 +473,8 @@ export function TopSearchBar({ onSelect, onSearchChange, sidebarOpen, onSearchRe
         )}
       </div>
 
-      {/* Search input */}
-      <div className="relative flex-shrink-0" style={{ width: 'min(400px, 40%)' }}>
+      {/* Search input - fills remaining width */}
+      <div className="relative flex-1 min-w-0">
         <input
           ref={inputRef}
           type="text"

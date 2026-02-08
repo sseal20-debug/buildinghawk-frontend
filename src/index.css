@@ -281,15 +281,14 @@ body {
    Modeled after Google Maps / Mapbox satellite
    ============================================== */
 
-/* Street labels tile layer - invert dark labels to bright white for satellite
-   IMPORTANT: Only apply filter ONCE (on container OR on img, not both - double invert cancels out) */
+/* Street labels tile layer -- clean dark text on satellite, no filter inversion
+   CartoDB dark_only_labels provide crisp dark text that reads well on satellite imagery */
 .bright-labels-layer {
-  /* No filter here - only apply to img children to avoid double-inversion */
-  opacity: 0.85;
+  opacity: 0.9;
 }
 
 .bright-labels-layer img {
-  filter: invert(1) brightness(2) contrast(1.5) saturate(0) !important;
+  /* No filter - use native dark labels as-is for clean, readable text */
 }
 
 /* ==============================================
@@ -833,7 +832,7 @@ body {
 
 /* Sidebar panel - slides in/out */
 .sidebar-panel {
-  width: 240px;
+  width: 160px;
   background: white;
   border-right: 1px solid #e5e7eb;
   display: flex;
@@ -872,7 +871,7 @@ body {
   display: none;
 }
 
-/* Top floating search bar - centered on map */
+/* Top floating search bar - centered on map, unified single bar */
 .top-search-bar {
   position: absolute;
   top: 14px;
@@ -881,15 +880,13 @@ body {
   z-index: 999;
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 550px;
-  max-width: calc(100% - 120px);
+  width: 620px;
+  max-width: calc(100% - 80px);
   pointer-events: none;
 }
 
 .top-search-bar > * {
   pointer-events: auto;
-  width: 100%;
 }
 
 /* ---- MOBILE (< 768px) ---- */
@@ -937,7 +934,7 @@ body {
 /* ---- TABLET (768-1024) ---- */
 @media (min-width: 768px) and (max-width: 1024px) {
   .sidebar-panel {
-    width: 260px;
+    width: 180px;
   }
 }
 
