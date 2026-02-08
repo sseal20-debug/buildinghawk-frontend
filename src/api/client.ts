@@ -7,11 +7,19 @@ class ApiError extends Error {
   }
 }
 
+const SESSION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
 function getApiKey(): string | null {
   try {
     const user = localStorage.getItem('buildingHawkUser');
     if (user) {
       const parsed = JSON.parse(user);
+      // Expire sessions without loginAt (legacy) or older than 7 days
+      if (!parsed.loginAt || Date.now() - parsed.loginAt > SESSION_MAX_AGE_MS) {
+        localStorage.removeItem('buildingHawkUser');
+        window.location.reload();
+        return null;
+      }
       return parsed.apiKey || null;
     }
   } catch { /* ignore */ }

@@ -31,6 +31,7 @@ import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMap
 import type { ListingMarker } from "./api/client"
 import { useDebounce } from "./hooks/useDebounce"
 import type { Parcel, SearchCriteria, SearchResultCollection, SavedSearch, CRMEntity } from "./types"
+import { SESSION_MAX_AGE_MS } from "./styles/theme"
 import type { UserSession } from "./styles/theme"
 
 type ViewState =
@@ -503,6 +504,12 @@ export default function App() {
     if (storedUser) {
       try {
         const parsed = JSON.parse(storedUser)
+        // Check session expiry (no loginAt = legacy session, treat as expired)
+        if (!parsed.loginAt || Date.now() - parsed.loginAt > SESSION_MAX_AGE_MS) {
+          localStorage.removeItem('buildingHawkUser')
+          setIsCheckingAuth(false)
+          return
+        }
         if (parsed.apiKey) {
           // Verify the stored apiKey is still valid
           const apiUrl = import.meta.env.VITE_API_URL || ''

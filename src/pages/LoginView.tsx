@@ -49,6 +49,7 @@ export function LoginView({ onLogin }: LoginViewProps) {
         role: selectedRole,
         authenticated: true,
         apiKey: password.trim(),
+        loginAt: Date.now(),
       }
       localStorage.setItem('buildingHawkUser', JSON.stringify(user))
 
