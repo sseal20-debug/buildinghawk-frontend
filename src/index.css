@@ -947,6 +947,14 @@ body {
   .top-search-bar > .relative {
     width: 100% !important;
   }
+  /* On mobile, collapse search mode button to icon only */
+  .search-mode-btn .search-mode-label {
+    display: none;
+  }
+  .search-mode-btn {
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+  }
   .quick-filter-row {
     margin-left: 0 !important;
     gap: 4px !important;
