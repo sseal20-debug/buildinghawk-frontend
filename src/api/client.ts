@@ -94,12 +94,13 @@ export interface UnifiedSearchResult {
 
 // Company label for tenant map overlay
 export interface CompanyLabel {
-  id: number;
+  id: number | string;
   name: string;
   lat: number;
   lng: number;
   address: string;
   city: string;
+  apn?: string;
 }
 
 // Property marker type for map display
@@ -1601,6 +1602,20 @@ export const tenantsApi = {
   // Get summary statistics
   getStats: () =>
     request<TenantStats>('/tenants/stats'),
+
+  // Get map labels (company names with lat/lng for map overlay)
+  getMapLabels: () =>
+    request<any[]>('/tenants/map-labels').then(rows =>
+      rows.map(r => ({
+        id: r.entity_id,
+        name: r.entity_name,
+        lat: r.lat,
+        lng: r.lng,
+        address: r.street_address || '',
+        city: r.city || '',
+        apn: r.apn,
+      } as CompanyLabel))
+    ),
 };
 
 // ============================================================================

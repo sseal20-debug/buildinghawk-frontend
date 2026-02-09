@@ -28,7 +28,7 @@ import { VacantPanel, ClientsPanel, CondosPanel, StatsPanel } from "./components
 import { LoginView } from "./pages/LoginView"
 import { PropertyContextMenu, type ContextMenuAction } from "./components/Map/PropertyContextMenu"
 import { PropertyCard } from "./components/Map/PropertyCard"
-import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMapApi } from "./api/client"
+import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMapApi, tenantsApi } from "./api/client"
 import { useDebounce } from "./hooks/useDebounce"
 import type { Parcel, SearchCriteria, SearchResultCollection, SavedSearch, CRMEntity } from "./types"
 import { SESSION_MAX_AGE_MS } from "./styles/theme"
@@ -692,8 +692,8 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
 
   // Query for company labels (tenant overlay) when Layer 5 is active
   const { data: companyLabelsData } = useQuery({
-    queryKey: ["properties", "company-labels"],
-    queryFn: crmPropertiesApi.getCompanyLabels,
+    queryKey: ["tenants", "map-labels"],
+    queryFn: tenantsApi.getMapLabels,
     enabled: showTenantLabels,
     staleTime: 1000 * 60 * 10, // 10 minutes
   })
