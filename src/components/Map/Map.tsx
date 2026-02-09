@@ -10,7 +10,7 @@ import 'leaflet-draw/dist/leaflet.draw.css'
 // leaflet.gridlayer.googlemutant loaded dynamically when user selects Google Satellite (HD)
 
 interface MapProps {
-  onParcelSelect: (parcel: Parcel) => void
+  onParcelSelect: (parcel: Parcel, clickEvent?: { x: number; y: number }) => void
   onParcelRightClick?: (parcel: Parcel, position: { x: number; y: number }) => void
   selectedApn?: string
   center?: { lat: number; lng: number } | null
@@ -39,8 +39,8 @@ interface MapProps {
   listingHighlights?: Array<{ color: string; geojson: import('@/types').ParcelFeatureCollection }>
   // APN to highlight in red (deep link from email alerts)
   highlightApn?: string | null
-  // Right-click on unit address pin (for sale listing detail)
-  onUnitRightClick?: (unit: ParcelUnit, position: { x: number; y: number }) => void
+  // Click on unit address pin (opens listing detail drawer)
+  onUnitClick?: (unit: ParcelUnit) => void
 }
 
 // Orange County bounds - expanded for better panning
@@ -143,7 +143,7 @@ export function Map({
   activeLayerName = 'New Listings/Updates',
   listingHighlights,
   highlightApn,
-  onUnitRightClick,
+  onUnitClick,
 }: MapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -273,13 +273,13 @@ export function Map({
   // Store callbacks in refs to avoid re-creating layers
   const onParcelSelectRef = useRef(onParcelSelect)
   const onParcelRightClickRef = useRef(onParcelRightClick)
-  const onUnitRightClickRef = useRef(onUnitRightClick)
+  const onUnitClickRef = useRef(onUnitClick)
 
   useEffect(() => {
     onParcelSelectRef.current = onParcelSelect
     onParcelRightClickRef.current = onParcelRightClick
-    onUnitRightClickRef.current = onUnitRightClick
-  }, [onParcelSelect, onParcelRightClick, onUnitRightClick])
+    onUnitClickRef.current = onUnitClick
+  }, [onParcelSelect, onParcelRightClick, onUnitClick])
 
   // Handle local GeoJSON file upload
   const _handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -318,10 +318,10 @@ export function Map({
             vacant_count: props.vacant_count || 0,
           }
           
-          // Left click - select parcel (use ref to avoid stale closure)
+          // Left click - select parcel and open context menu (use ref to avoid stale closure)
           layer.on('click', (e: L.LeafletMouseEvent) => {
             L.DomEvent.stopPropagation(e)
-            onParcelSelectRef.current(parcel)
+            onParcelSelectRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
           })
           
           // Right click - context menu (use ref to avoid stale closure)
@@ -974,7 +974,7 @@ export function Map({
             // Left click - select parcel + toggle in selectedParcels set
             l.on('click', (e: L.LeafletMouseEvent) => {
               L.DomEvent.stopPropagation(e)
-              onParcelSelectRef.current(parcel)
+              onParcelSelectRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
 
               // Also toggle in the selected parcels set
               const clickedApn = parcel.apn
@@ -1116,7 +1116,7 @@ export function Map({
             // Click on selected parcel → deselect it (toggle off) + open detail
             l.on('click', (e: L.LeafletMouseEvent) => {
               L.DomEvent.stopPropagation(e)
-              onParcelSelectRef.current(parcel)
+              onParcelSelectRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
               // Toggle off — remove from selected set
               setSelectedParcelApns(prev => {
                 const next = new Set(prev)
@@ -1184,7 +1184,7 @@ export function Map({
         })
 
         // Add click handler to select the parcel
-        layer.on('click', () => {
+        layer.on('click', (e: L.LeafletMouseEvent) => {
           const props = feature.properties
           if (props && onParcelSelectRef.current) {
             onParcelSelectRef.current({
@@ -1194,7 +1194,7 @@ export function Map({
               zip: props.zip,
               land_sf: props.land_sf,
               zoning: props.zoning,
-            } as Parcel)
+            } as Parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
           }
         })
 
@@ -1365,7 +1365,7 @@ export function Map({
               zoning: '',
               building_count: property.building_count,
             }
-            onParcelSelectRef.current(parcel)
+            onParcelSelectRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
           })
           propertyLayer.addLayer(marker)
         }
@@ -1421,7 +1421,7 @@ export function Map({
               zoning: '',
               building_count: 0,
             }
-            onParcelSelectRef.current(parcel)
+            onParcelSelectRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
           })
           landLayer.addLayer(marker)
         }
@@ -1474,7 +1474,7 @@ export function Map({
               zoning: '',
               building_count: 0,
             }
-            onParcelSelectRef.current(parcel)
+            onParcelSelectRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
           })
 
           companyLabelLayer.addLayer(marker)
@@ -1554,28 +1554,11 @@ export function Map({
           className: 'address-tooltip'
         })
 
-        // Click to navigate to parcel
+        // Click unit pin → open listing detail drawer with sale data
         marker.on('click', (e: L.LeafletMouseEvent) => {
           L.DomEvent.stopPropagation(e)
-          // Create a parcel object for the click
-          const parcel: Parcel = {
-            apn: unit.parcel_apn,
-            situs_address: unit.unit_address,
-            city: unit.city || '',
-            zip: '',
-            land_sf: 0,
-            zoning: '',
-            building_count: 0,
-          }
-          onParcelSelectRef.current(parcel)
-        })
-
-        // Right-click to open listing detail drawer
-        marker.on('contextmenu', (e: L.LeafletMouseEvent) => {
-          L.DomEvent.stopPropagation(e)
-          e.originalEvent.preventDefault()
-          if (onUnitRightClickRef.current) {
-            onUnitRightClickRef.current(unit, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
+          if (onUnitClickRef.current) {
+            onUnitClickRef.current(unit)
           }
         })
 
@@ -1653,7 +1636,7 @@ export function Map({
             unit_count: feature.properties.unit_count,
             vacant_count: feature.properties.vacant_count,
           }
-          onParcelSelectRef.current(parcel)
+          onParcelSelectRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
         })
 
         addressLabelLayer.addLayer(marker)
@@ -1688,7 +1671,7 @@ export function Map({
             }),
           })
 
-          geoLayer.on('click', () => {
+          geoLayer.on('click', (e: L.LeafletMouseEvent) => {
             const props = feature.properties
             if (props && onParcelSelectRef.current) {
               onParcelSelectRef.current({
@@ -1698,7 +1681,7 @@ export function Map({
                 zip: props.zip,
                 land_sf: props.land_sf,
                 zoning: props.zoning,
-              } as Parcel)
+              } as Parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
             }
           })
 

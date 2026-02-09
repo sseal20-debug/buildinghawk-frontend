@@ -27,7 +27,7 @@ import { EmailHistoryPanel } from "./components/EmailHistory"
 import { VacantPanel, ClientsPanel, CondosPanel, StatsPanel } from "./components/Panels"
 import { LoginView } from "./pages/LoginView"
 import { PropertyContextMenu, type ContextMenuAction } from "./components/Map/PropertyContextMenu"
-import { PropertyCard } from "./components/Map/PropertyCard"
+// PropertyCard removed - all property data shows in right-click context menu
 import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMapApi, tenantsApi, type ParcelUnit } from "./api/client"
 import { useDebounce } from "./hooks/useDebounce"
 import type { Parcel, SearchCriteria, SearchResultCollection, SavedSearch, CRMEntity } from "./types"
@@ -955,9 +955,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
 
   // Handle CRM marker click
   const handleCRMMarkerClick = useCallback((entity: CRMEntity) => {
-    console.log("CRM marker clicked:", entity)
-    // TODO: Open CRM entity detail panel
-    setPanelView("crm")
+    setPanelView("explorer")
   }, [])
 
   // Handle right-click on parcel - show context menu
@@ -975,8 +973,8 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     })
   }, [])
 
-  // Handle right-click on unit address pin - open listing detail drawer
-  const handleUnitRightClick = useCallback(async (unit: ParcelUnit, _position: { x: number; y: number }) => {
+  // Handle click on unit address pin - open listing detail drawer
+  const handleUnitClick = useCallback(async (unit: ParcelUnit) => {
     // 1) Try cached listing data first (if toggles are active)
     if (listingMarkersForToggles) {
       const allMarkers = Object.values(listingMarkersForToggles).flat()
@@ -995,7 +993,6 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         setSelectedListing(match)
         return
       }
-      // Also check escrow listings
       const escrowData = await listingsMapApi.getMarkers({ status: 'escrow' })
       const escrowMatch = findMatchingListing(escrowData.markers, unit.unit_address)
       if (escrowMatch) {
@@ -1006,15 +1003,14 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
       console.error('Listing lookup failed:', e)
     }
 
-    // 3) No listing found — fall back to context menu
+    // 3) No listing found — just select the parcel
     const parcel: Parcel = {
       apn: unit.parcel_apn,
       situs_address: unit.unit_address,
       city: unit.city || '',
       zip: '', land_sf: 0, zoning: '', building_count: 0,
     }
-    setContextMenuParcel(parcel)
-    setContextMenuPosition(_position)
+    setSelectedParcel(parcel)
   }, [listingMarkersForToggles, findMatchingListing])
 
   // Handle context menu action
@@ -1068,9 +1064,9 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         setPanelView("emails")
         break
       case 'crm':
-        // Open CRM panel
+        // Open CRM explorer panel
         setSelectedParcel(parcel)
-        setPanelView("crm")
+        setPanelView("explorer")
         break
       case 'add-prospect':
         // TODO: Add parcel as prospect
@@ -1112,11 +1108,13 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     setContextMenuPosition(null)
   }, [])
 
-  const handleParcelSelect = useCallback((parcel: Parcel) => {
-    console.log("Parcel selected:", parcel.apn, parcel.situs_address)
+  const handleParcelSelect = useCallback((parcel: Parcel, clickEvent?: { x: number; y: number }) => {
     setSelectedParcel(parcel)
-    // Don't auto-open bottom sheet - it causes freeze when backend is down
-    // Just update state, show property card on map instead
+    // Open context menu directly on left-click (no bottom card)
+    if (clickEvent) {
+      setContextMenuParcel(parcel)
+      setContextMenuPosition(clickEvent)
+    }
     setViewState({ type: "map" })
     setPanelView("none")
     setIsDocDrawerOpen(false)
@@ -1350,7 +1348,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           <Map
             onParcelSelect={handleParcelSelect}
             onParcelRightClick={handleParcelRightClick}
-            onUnitRightClick={handleUnitRightClick}
+            onUnitClick={handleUnitClick}
             selectedApn={selectedParcel?.apn}
             center={mapCenter}
             selectedSearchLocation={selectedSearchLocation}
@@ -1380,23 +1378,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           }}
         />
 
-        {/* Property Card - shows when parcel is selected */}
-        {selectedParcel && viewState.type === "map" && (
-          <PropertyCard
-            parcel={selectedParcel}
-            onClose={() => setSelectedParcel(null)}
-            onViewDetails={() => {
-              handleParcelRightClick(selectedParcel, {
-                x: window.innerWidth / 2,
-                y: window.innerHeight / 2 - 100
-              })
-            }}
-            onRightClick={(e) => {
-              e.preventDefault()
-              handleParcelRightClick(selectedParcel, { x: e.clientX, y: e.clientY })
-            }}
-          />
-        )}
+        {/* PropertyCard removed - context menu handles all property data display */}
 
         {/* Map Controls - top right */}
         <div className="absolute top-4 right-4 z-10 flex gap-2">
