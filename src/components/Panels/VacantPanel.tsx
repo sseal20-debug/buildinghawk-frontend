@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
+const API_URL = import.meta.env.VITE_API_URL || ''
+const API_KEY = (() => {
+  try { return localStorage.getItem('buildingHawkUser') || '' } catch { return '' }
+})()
+
 interface VacantUnit {
   id: string
   address: string
@@ -54,7 +59,9 @@ export function VacantPanel({ onClose, onPropertySelect }: VacantPanelProps) {
       if (sfRange !== 'any') params.append('sf_range', sfRange)
       if (searchCity) params.append('city', searchCity)
 
-      const res = await fetch(`/api/vacant?${params}`)
+      const res = await fetch(`${API_URL}/api/vacant?${params}`, {
+        headers: { 'x-api-key': API_KEY }
+      })
       if (!res.ok) throw new Error('Failed to fetch vacant units')
       return res.json() as Promise<{ units: VacantUnit[]; count: number }>
     },

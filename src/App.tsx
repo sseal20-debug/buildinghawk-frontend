@@ -896,13 +896,15 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
       if (turningOn) {
         setActiveLayer(key as LayerKey)
         // Enable properties/land automatically based on layer
-        if (['listings', 'address', 'specs', 'type', 'comps', 'vacant', 'offmarket', 'newdev', 'condos'].includes(key)) {
+        if (['listings', 'address', 'specs', 'type', 'comps', 'vacant', 'offmarket', 'newdev', 'condos', 'owners', 'investor', 'distressed'].includes(key)) {
           setShowProperties(true)
         }
         if (key === 'crm') {
           setShowProperties(true)
           setShowLand(true)
         }
+        // Enable CRM marker overlays for people layers
+        if (key === 'clients') setShowClients(true)
         // Toggle tenant labels for Layer 5
         setShowTenantLabels(key === 'tenants')
 
@@ -940,6 +942,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         // Toggling OFF — close the panel if it matches this layer
         setPanelView('none')
         if (key === 'tenants') setShowTenantLabels(false)
+        if (key === 'clients') setShowClients(false)
       }
 
       return next
