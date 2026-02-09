@@ -24,11 +24,11 @@ import { TenantsSearch } from "./components/Tenants"
 import { HotsheetPanel } from "./components/Hotsheet"
 import { WarnAlertsPanel } from "./components/WarnAlerts/WarnAlertsPanel"
 import { EmailHistoryPanel } from "./components/EmailHistory"
-import { VacantPanel, ClientsPanel, CondosPanel, StatsPanel } from "./components/Panels"
+import { VacantPanel, ClientsPanel, CondosPanel, StatsPanel, OwnersPanel, RequirementsPanel, InvestorsPanel, TypeFilterPanel } from "./components/Panels"
 import { LoginView } from "./pages/LoginView"
 import { PropertyContextMenu, type ContextMenuAction } from "./components/Map/PropertyContextMenu"
 // PropertyCard removed - all property data shows in right-click context menu
-import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMapApi, tenantsApi, type ParcelUnit } from "./api/client"
+import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMapApi, tenantsApi, entitiesApi, type ParcelUnit } from "./api/client"
 import { useDebounce } from "./hooks/useDebounce"
 import type { Parcel, SearchCriteria, SearchResultCollection, SavedSearch, CRMEntity } from "./types"
 import { SESSION_MAX_AGE_MS } from "./styles/theme"
@@ -723,11 +723,10 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   const [prospectFilterMenuPos, setProspectFilterMenuPos] = useState<{ x: number; y: number } | null>(null)
   // (CRM dropdown removed - now in sidebar)
 
-  // Apply prospect filter
+  // Apply prospect filter -- sets filter state which triggers TanStack Query refetch
   const handleApplyProspectFilter = useCallback((filter: Partial<CRMProspectFilter>) => {
     setProspectFilter(filter)
-    console.log("Applying prospect filter:", filter)
-    // TODO: Fetch filtered prospects and show on map
+    setShowProspects(true) // Ensure prospects layer is visible when filter applied
   }, [])
 
   // (Filter option select removed - now in sidebar)
@@ -1069,30 +1068,52 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         setPanelView("explorer")
         break
       case 'add-prospect':
-        // TODO: Add parcel as prospect
-        console.log('Add as prospect:', parcel)
-        alert(`Added ${parcel.situs_address} as Prospect`)
+        entitiesApi.create({
+          entity_name: parcel.assessor_owner_name || parcel.situs_address || 'Unknown',
+          entity_type: 'company',
+        }).then(() => {
+          alert(`Added ${parcel.situs_address || parcel.apn} as Prospect`)
+        }).catch((err) => {
+          console.error('Failed to add prospect:', err)
+          alert('Failed to add prospect')
+        })
         break
       case 'add-client':
-        // TODO: Add parcel as client
-        console.log('Add as client:', parcel)
-        alert(`Added ${parcel.situs_address} as Client`)
+        entitiesApi.create({
+          entity_name: parcel.assessor_owner_name || parcel.situs_address || 'Unknown',
+          entity_type: 'company',
+        }).then(() => {
+          alert(`Added ${parcel.situs_address || parcel.apn} as Client`)
+        }).catch((err) => {
+          console.error('Failed to add client:', err)
+          alert('Failed to add client')
+        })
         break
       case 'new-development':
-        // Flag as new development
-        console.log('Flag as new development:', parcel)
+        parcelsApi.updateByApn(parcel.apn, { is_new_development: true }).then(() => {
+          alert(`Flagged ${parcel.situs_address || parcel.apn} as New Development`)
+        }).catch((err) => {
+          console.error('Failed to flag new development:', err)
+          alert('Failed to flag as new development')
+        })
         break
       case 'distressed':
-        // Flag as distressed
-        console.log('Flag as distressed:', parcel)
+        parcelsApi.updateByApn(parcel.apn, { is_distressed: true }).then(() => {
+          alert(`Flagged ${parcel.situs_address || parcel.apn} as Distressed`)
+        }).catch((err) => {
+          console.error('Failed to flag distressed:', err)
+          alert('Failed to flag as distressed')
+        })
         break
       case 'off-market':
-        // Flag as off-market
-        console.log('Flag as off-market:', parcel)
+        parcelsApi.updateByApn(parcel.apn, { is_off_market: true }).then(() => {
+          alert(`Flagged ${parcel.situs_address || parcel.apn} as Off-Market`)
+        }).catch((err) => {
+          console.error('Failed to flag off-market:', err)
+          alert('Failed to flag as off-market')
+        })
         break
       case 'export-pdf':
-        // Export property to PDF
-        console.log('Export PDF:', parcel)
         alert('PDF export coming soon!')
         break
       case 'share':
@@ -1534,6 +1555,50 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
 
             {panelView === "stats" && (
               <StatsPanel onClose={closePanel} />
+            )}
+
+            {panelView === "owners" && (
+              <OwnersPanel onClose={closePanel} />
+            )}
+
+            {panelView === "requirements" && (
+              <RequirementsPanel onClose={closePanel} />
+            )}
+
+            {panelView === "investors" && (
+              <InvestorsPanel onClose={closePanel} />
+            )}
+
+            {panelView === "type" && (
+              <TypeFilterPanel onClose={closePanel} />
+            )}
+
+            {panelView === "address" && (
+              <div className="h-full flex flex-col bg-navy-dark text-white">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-navy-light">
+                  <h2 className="text-lg font-bold text-gold">Address Search</h2>
+                  <button onClick={closePanel} className="p-1 hover:bg-navy-light rounded">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="p-4 text-gray-400 text-sm">Use the search bar at the top to search by address, tenant, industry, or square footage.</div>
+              </div>
+            )}
+
+            {panelView === "offmarket" && (
+              <div className="h-full flex flex-col bg-navy-dark text-white">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-navy-light">
+                  <h2 className="text-lg font-bold text-gold">Off-Market</h2>
+                  <button onClick={closePanel} className="p-1 hover:bg-navy-light rounded">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="p-4 text-gray-400 text-sm">Right-click any parcel and select "Off-Market" to flag it. Flagged properties will appear here.</div>
+              </div>
             )}
 
             {panelView === "notifications" && (

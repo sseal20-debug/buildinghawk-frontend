@@ -244,7 +244,7 @@ export const parcelsApi = {
   getByApn: (apn: string) =>
     request<import('@/types').Parcel>(`/parcels/${encodeURIComponent(apn)}`),
 
-  updateByApn: (apn: string, data: { land_sf?: number; zoning?: string; assessor_owner_name?: string }) =>
+  updateByApn: (apn: string, data: { land_sf?: number; zoning?: string; assessor_owner_name?: string; is_distressed?: boolean; is_off_market?: boolean; is_new_development?: boolean }) =>
     request<import('@/types').Parcel>(`/parcels/${encodeURIComponent(apn)}`, {
       method: 'PATCH',
       body: JSON.stringify(data),
