@@ -28,7 +28,7 @@ import { VacantPanel, ClientsPanel, CondosPanel, StatsPanel } from "./components
 import { LoginView } from "./pages/LoginView"
 import { PropertyContextMenu, type ContextMenuAction } from "./components/Map/PropertyContextMenu"
 import { PropertyCard } from "./components/Map/PropertyCard"
-import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMapApi, tenantsApi } from "./api/client"
+import { searchApi, placesApi, crmApi, parcelsApi, crmPropertiesApi, listingsMapApi, tenantsApi, type ParcelUnit } from "./api/client"
 import { useDebounce } from "./hooks/useDebounce"
 import type { Parcel, SearchCriteria, SearchResultCollection, SavedSearch, CRMEntity } from "./types"
 import { SESSION_MAX_AGE_MS } from "./styles/theme"
@@ -960,6 +960,33 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     setContextMenuPosition(position)
   }, [])
 
+  // Handle right-click on unit address pin - open listing detail drawer
+  const handleUnitRightClick = useCallback((unit: ParcelUnit, _position: { x: number; y: number }) => {
+    // Try to match unit address to a listing marker from the toggle data
+    if (listingMarkersForToggles) {
+      const allMarkers = Object.values(listingMarkersForToggles).flat()
+      // Normalize for matching: strip ", Orange, CA" suffix and compare
+      const unitAddr = (unit.unit_address || '').replace(/,\s*(Orange|CA).*$/i, '').trim().toUpperCase()
+      const match = allMarkers.find((m: any) => {
+        const listingAddr = (m.address || '').trim().toUpperCase()
+        return listingAddr === unitAddr || unitAddr.includes(listingAddr) || listingAddr.includes(unitAddr)
+      })
+      if (match) {
+        setSelectedListing(match)
+        return
+      }
+    }
+    // Fallback: open context menu for the parent parcel
+    const parcel: Parcel = {
+      apn: unit.parcel_apn,
+      situs_address: unit.unit_address,
+      city: unit.city || '',
+      zip: '', land_sf: 0, zoning: '', building_count: 0,
+    }
+    setContextMenuParcel(parcel)
+    setContextMenuPosition(_position)
+  }, [listingMarkersForToggles])
+
   // Handle context menu action
   const handleContextMenuAction = useCallback((action: ContextMenuAction, parcel: Parcel) => {
     console.log(`Context menu action: ${action}`, parcel)
@@ -1293,6 +1320,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           <Map
             onParcelSelect={handleParcelSelect}
             onParcelRightClick={handleParcelRightClick}
+            onUnitRightClick={handleUnitRightClick}
             selectedApn={selectedParcel?.apn}
             center={mapCenter}
             selectedSearchLocation={selectedSearchLocation}

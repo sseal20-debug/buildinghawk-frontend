@@ -39,6 +39,8 @@ interface MapProps {
   listingHighlights?: Array<{ color: string; geojson: import('@/types').ParcelFeatureCollection }>
   // APN to highlight in red (deep link from email alerts)
   highlightApn?: string | null
+  // Right-click on unit address pin (for sale listing detail)
+  onUnitRightClick?: (unit: ParcelUnit, position: { x: number; y: number }) => void
 }
 
 // Orange County bounds - expanded for better panning
@@ -141,6 +143,7 @@ export function Map({
   activeLayerName = 'New Listings/Updates',
   listingHighlights,
   highlightApn,
+  onUnitRightClick,
 }: MapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -270,11 +273,13 @@ export function Map({
   // Store callbacks in refs to avoid re-creating layers
   const onParcelSelectRef = useRef(onParcelSelect)
   const onParcelRightClickRef = useRef(onParcelRightClick)
-  
+  const onUnitRightClickRef = useRef(onUnitRightClick)
+
   useEffect(() => {
     onParcelSelectRef.current = onParcelSelect
     onParcelRightClickRef.current = onParcelRightClick
-  }, [onParcelSelect, onParcelRightClick])
+    onUnitRightClickRef.current = onUnitRightClick
+  }, [onParcelSelect, onParcelRightClick, onUnitRightClick])
 
   // Handle local GeoJSON file upload
   const _handleFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1563,6 +1568,15 @@ export function Map({
             building_count: 0,
           }
           onParcelSelectRef.current(parcel)
+        })
+
+        // Right-click to open listing detail drawer
+        marker.on('contextmenu', (e: L.LeafletMouseEvent) => {
+          L.DomEvent.stopPropagation(e)
+          e.originalEvent.preventDefault()
+          if (onUnitRightClickRef.current) {
+            onUnitRightClickRef.current(unit, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
+          }
         })
 
         addressLabelLayer.addLayer(marker)
