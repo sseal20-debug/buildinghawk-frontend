@@ -30,7 +30,7 @@ export function PropertyMapPreview({ geojsonUrl, onPropertySelect, height = '600
     if (!mapContainerRef.current || mapRef.current) return
 
     const map = L.map(mapContainerRef.current, {
-      center: [33.84, -117.89],
+      center: [33.84, -117.93],
       zoom: 13,
     })
     mapRef.current = map

@@ -1281,7 +1281,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             title="Fit All"
             onClick={() => {
               const map = mapComponentRef.current?.getMap()
-              if (map) map.setView([33.84, -117.89], 13)
+              if (map) map.setView([33.84, -117.93], 13)
             }}
           >
             ⊡

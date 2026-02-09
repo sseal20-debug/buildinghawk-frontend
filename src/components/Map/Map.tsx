@@ -46,7 +46,7 @@ const OC_BOUNDS: L.LatLngBoundsExpression = [
 ]
 
 // North Orange County center (Anaheim/Fullerton industrial area)
-const NORTH_OC_CENTER: L.LatLngExpression = [33.84, -117.89]
+const NORTH_OC_CENTER: L.LatLngExpression = [33.84, -117.93]
 const DEFAULT_ZOOM = 13
 
 type ImagerySource = 'esri' | 'google'
