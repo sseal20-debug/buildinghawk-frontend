@@ -37,6 +37,8 @@ interface MapProps {
   activeLayerName?: string
   // Listing parcel polygon highlights (colored by listing type toggle)
   listingHighlights?: Array<{ color: string; geojson: import('@/types').ParcelFeatureCollection }>
+  // APN to highlight in red (deep link from email alerts)
+  highlightApn?: string | null
 }
 
 // Orange County bounds - expanded for better panning
@@ -95,9 +97,6 @@ const LABEL_COLORS = {
   freeways: '#FFCC00',     // Gold/Yellow for freeway lines
 }
 
-// Subject property address to highlight in RED
-const SUBJECT_PROPERTY_ADDRESS = '1193 N Blue Gum St'
-
 // Road overlay styles — refined for professional satellite view
 // Thinner, more transparent = lets satellite imagery show through
 const ROAD_OVERLAY_STYLES = {
@@ -141,6 +140,7 @@ export function Map({
   onMapReady,
   activeLayerName = 'New Listings/Updates',
   listingHighlights,
+  highlightApn,
 }: MapProps) {
   const mapContainerRef = useRef<HTMLDivElement>(null)
   const mapRef = useRef<L.Map | null>(null)
@@ -914,10 +914,10 @@ export function Map({
     // Add new features - AQUA BLUE default, RED for subject property
     parcelsData.features.forEach((feature: ParcelFeature) => {
       try {
-        // Check if this is the subject property (1193 N Blue Gum St)
-        const address = feature.properties.address || ''
-        const isSubjectProperty = address.toLowerCase().includes('1193') &&
-          address.toLowerCase().includes('blue gum')
+        // Check if this parcel should be highlighted in red (deep link or selected)
+        const featureApn = (feature.properties.apn || '').replace(/-/g, '').replace(/ /g, '')
+        const normalizedHighlight = (highlightApn || '').replace(/-/g, '').replace(/ /g, '')
+        const isSubjectProperty = normalizedHighlight ? featureApn === normalizedHighlight : false
 
         // Use RED for subject property, AQUA BLUE for others
         const parcelColor = isSubjectProperty ? PARCEL_COLORS.subject : PARCEL_COLORS.default
@@ -1001,7 +1001,7 @@ export function Map({
         // Skip invalid geometries
       }
     })
-  }, [parcelsData, quickFilter]) // Re-render when data or quick filter changes
+  }, [parcelsData, quickFilter, highlightApn]) // Re-render when data, quick filter, or highlight changes
 
   // Update styles when zoom changes (only visibility) - AQUA BLUE
   // Also hides when quickFilter is null (parcels hidden by default)

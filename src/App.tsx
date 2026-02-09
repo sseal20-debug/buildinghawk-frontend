@@ -499,7 +499,44 @@ export default function App() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
 
   // Check for existing session on mount - VALIDATE apiKey against backend
+  // Also handles ?key= URL param for email deep links (auto-auth)
   useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const urlKey = urlParams.get('key')
+    const urlApn = urlParams.get('apn')
+
+    // Auto-authenticate from email deep link (?key=hawkeye2026&apn=082-261-15)
+    if (urlKey) {
+      const apiUrl = import.meta.env.VITE_API_URL || ''
+      fetch(`${apiUrl}/api/auth/check`, {
+        headers: { 'x-api-key': urlKey },
+      })
+        .then((res) => {
+          if (res.ok) {
+            const newUser: UserSession = {
+              email: 'user@buildinghawk.com',
+              role: 'Broker/Agent',
+              authenticated: true,
+              apiKey: urlKey,
+              loginAt: Date.now(),
+            }
+            localStorage.setItem('buildingHawkUser', JSON.stringify(newUser))
+            if (urlApn) sessionStorage.setItem('deepLinkApn', urlApn)
+            setUser(newUser)
+            // Strip key from URL bar for security, keep apn
+            window.history.replaceState({}, '', urlApn ? `?apn=${urlApn}` : window.location.pathname)
+          }
+          setIsCheckingAuth(false)
+        })
+        .catch(() => setIsCheckingAuth(false))
+      return
+    }
+
+    // If no ?key= param, store apn for after manual login
+    if (urlApn) {
+      sessionStorage.setItem('deepLinkApn', urlApn)
+    }
+
     const storedUser = localStorage.getItem('buildingHawkUser')
     if (storedUser) {
       try {
@@ -616,6 +653,35 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   const [emailSearchQuery, setEmailSearchQuery] = useState<string | null>(null)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [_activeFilterTab, _setActiveFilterTab] = useState<FilterTabId>(null)
+
+  // Deep link: APN to highlight in red on the map (from email alerts)
+  const [highlightApn, setHighlightApn] = useState<string | null>(null)
+
+  // Deep link navigation: check for ?apn= URL param on mount
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search)
+    const apn = urlParams.get('apn') || sessionStorage.getItem('deepLinkApn')
+    if (!apn) return
+
+    sessionStorage.removeItem('deepLinkApn')
+    window.history.replaceState({}, '', window.location.pathname)
+    setHighlightApn(apn)
+
+    // Fetch parcel by APN and fly map there
+    parcelsApi.getByApns([apn]).then((result) => {
+      if (result?.features?.length > 0) {
+        const feat = result.features[0]
+        const centroid = feat.properties?.centroid as unknown as { coordinates: [number, number] } | undefined
+        if (centroid?.coordinates) {
+          const [lng, lat] = centroid.coordinates
+          setMapCenter({ lat, lng })
+          setSelectedSearchLocation({ lat, lng })
+        }
+      }
+    }).catch((err) => {
+      console.error('Deep link: failed to fetch parcel by APN:', err)
+    })
+  }, [])
 
   // Sidebar state — start closed on mobile so the map is visible
   const [activeLayer, setActiveLayer] = useState<LayerKey>('listings')
@@ -1242,6 +1308,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
               mapComponentRef.current = { getMap: () => map }
             }}
             activeLayerName={LAYER_NAMES[activeLayer] || activeLayer}
+            highlightApn={highlightApn}
           />
         </div>
 
