@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
+const API_URL = import.meta.env.VITE_API_URL || ''
+const API_KEY = (() => {
+  try { return localStorage.getItem('buildingHawkUser') || '' } catch { return '' }
+})()
+
 interface Client {
   id: string
   name: string
@@ -40,7 +45,9 @@ export function ClientsPanel({ onClose, onClientSelect }: ClientsPanelProps) {
       if (typeFilter !== 'all') params.append('type', typeFilter)
       if (searchQuery) params.append('q', searchQuery)
 
-      const res = await fetch(`/api/crm/clients?${params}`)
+      const res = await fetch(`${API_URL}/api/crm/clients?${params}`, {
+        headers: { 'x-api-key': API_KEY }
+      })
       if (!res.ok) throw new Error('Failed to fetch clients')
       return res.json() as Promise<{ clients: Client[]; count: number }>
     },
