@@ -667,7 +667,13 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     window.history.replaceState({}, '', window.location.pathname)
     setHighlightApn(apn)
 
-    // 1. Fetch GeoJSON to get centroid for map fly-to
+    // Clear any selected parcel so PropertyCard doesn't show
+    setSelectedParcel(null)
+    setViewState({ type: 'map' })
+    setPanelView('none')
+
+    // Fetch GeoJSON to get centroid, then fly map to the parcel (zoom 17)
+    // No PropertyCard — user just wants to see the red parcel polygon on the map
     parcelsApi.getByApns([apn]).then((result) => {
       if (result?.features?.length > 0) {
         const feat = result.features[0]
@@ -680,17 +686,6 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
       }
     }).catch((err) => {
       console.error('Deep link: failed to fetch parcel GeoJSON:', err)
-    })
-
-    // 2. Fetch full parcel data to populate PropertyCard
-    parcelsApi.getByApn(apn).then((parcel) => {
-      if (parcel && parcel.apn) {
-        setSelectedParcel(parcel)
-        setViewState({ type: 'map' })
-        setPanelView('none')
-      }
-    }).catch((err) => {
-      console.error('Deep link: failed to fetch parcel details:', err)
     })
   }, [])
 
@@ -971,23 +966,47 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     setContextMenuPosition(position)
   }, [])
 
+  // Match a unit address to a listing marker in an array
+  const findMatchingListing = useCallback((markers: any[], unitAddress: string) => {
+    const unitAddr = (unitAddress || '').replace(/,\s*(Orange|CA).*$/i, '').trim().toUpperCase()
+    return markers.find((m: any) => {
+      const listingAddr = (m.address || '').trim().toUpperCase()
+      return listingAddr === unitAddr || unitAddr.includes(listingAddr) || listingAddr.includes(unitAddr)
+    })
+  }, [])
+
   // Handle right-click on unit address pin - open listing detail drawer
-  const handleUnitRightClick = useCallback((unit: ParcelUnit, _position: { x: number; y: number }) => {
-    // Try to match unit address to a listing marker from the toggle data
+  const handleUnitRightClick = useCallback(async (unit: ParcelUnit, _position: { x: number; y: number }) => {
+    // 1) Try cached listing data first (if toggles are active)
     if (listingMarkersForToggles) {
       const allMarkers = Object.values(listingMarkersForToggles).flat()
-      // Normalize for matching: strip ", Orange, CA" suffix and compare
-      const unitAddr = (unit.unit_address || '').replace(/,\s*(Orange|CA).*$/i, '').trim().toUpperCase()
-      const match = allMarkers.find((m: any) => {
-        const listingAddr = (m.address || '').trim().toUpperCase()
-        return listingAddr === unitAddr || unitAddr.includes(listingAddr) || listingAddr.includes(unitAddr)
-      })
+      const match = findMatchingListing(allMarkers, unit.unit_address)
       if (match) {
         setSelectedListing(match)
         return
       }
     }
-    // Fallback: open context menu for the parent parcel
+
+    // 2) No cache or no match — fetch sale + escrow listings directly
+    try {
+      const saleData = await listingsMapApi.getMarkers({ type: 'sale' })
+      const match = findMatchingListing(saleData.markers, unit.unit_address)
+      if (match) {
+        setSelectedListing(match)
+        return
+      }
+      // Also check escrow listings
+      const escrowData = await listingsMapApi.getMarkers({ status: 'escrow' })
+      const escrowMatch = findMatchingListing(escrowData.markers, unit.unit_address)
+      if (escrowMatch) {
+        setSelectedListing(escrowMatch)
+        return
+      }
+    } catch (e) {
+      console.error('Listing lookup failed:', e)
+    }
+
+    // 3) No listing found — fall back to context menu
     const parcel: Parcel = {
       apn: unit.parcel_apn,
       situs_address: unit.unit_address,
@@ -996,7 +1015,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     }
     setContextMenuParcel(parcel)
     setContextMenuPosition(_position)
-  }, [listingMarkersForToggles])
+  }, [listingMarkersForToggles, findMatchingListing])
 
   // Handle context menu action
   const handleContextMenuAction = useCallback((action: ContextMenuAction, parcel: Parcel) => {
