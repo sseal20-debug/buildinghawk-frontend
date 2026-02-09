@@ -667,7 +667,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     window.history.replaceState({}, '', window.location.pathname)
     setHighlightApn(apn)
 
-    // Fetch parcel by APN and fly map there
+    // 1. Fetch GeoJSON to get centroid for map fly-to
     parcelsApi.getByApns([apn]).then((result) => {
       if (result?.features?.length > 0) {
         const feat = result.features[0]
@@ -679,7 +679,18 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         }
       }
     }).catch((err) => {
-      console.error('Deep link: failed to fetch parcel by APN:', err)
+      console.error('Deep link: failed to fetch parcel GeoJSON:', err)
+    })
+
+    // 2. Fetch full parcel data to populate PropertyCard
+    parcelsApi.getByApn(apn).then((parcel) => {
+      if (parcel && parcel.apn) {
+        setSelectedParcel(parcel)
+        setViewState({ type: 'map' })
+        setPanelView('none')
+      }
+    }).catch((err) => {
+      console.error('Deep link: failed to fetch parcel details:', err)
     })
   }, [])
 
