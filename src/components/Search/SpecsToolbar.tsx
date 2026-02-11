@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useQuery } from '@tanstack/react-query'
 import { buildingSearchApi, parcelsApi } from '../../api/client'
 import type { BuildingSearchCriteria, BuildingSearchResult, FilterOptions } from '../../api/client'
@@ -60,6 +61,28 @@ const TYPE_OPTIONS = [
 
 type DropdownKey = 'type' | 'location' | 'size' | 'office' | 'yard' | 'power' | 'clearance' | 'loading' | 'yearBuilt' | 'special' | null
 
+// Dropdown rendered with position:fixed to escape overflow:hidden on #root
+function FixedDropdown({ anchorRef, wide, children }: {
+  anchorRef: React.RefObject<HTMLElement | null>
+  wide?: boolean
+  children: React.ReactNode
+}) {
+  const [pos, setPos] = useState({ top: 0, left: 0 })
+  useEffect(() => {
+    if (anchorRef.current) {
+      const rect = anchorRef.current.getBoundingClientRect()
+      setPos({ top: rect.bottom + 4, left: rect.left })
+    }
+  }, [anchorRef])
+  return createPortal(
+    <div className={`specs-dropdown specs-dropdown-fixed${wide ? ' specs-dropdown-wide' : ''}`}
+      style={{ top: pos.top, left: pos.left }}>
+      {children}
+    </div>,
+    document.body
+  )
+}
+
 function formatNumber(n: number | null | undefined): string {
   if (n == null) return '--'
   return n.toLocaleString()
@@ -75,6 +98,7 @@ function formatCurrency(n: number | null | undefined): string {
 export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToProperty, onClose }: SpecsToolbarProps) {
   const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
+  const dropdownAnchorRef = useRef<HTMLButtonElement | null>(null)
 
   // Filter state
   const [selectedTypes, setSelectedTypes] = useState<string[]>([])
@@ -115,9 +139,12 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
   useEffect(() => {
     if (openDropdown === null) return
     const handleMouseDown = (e: MouseEvent) => {
-      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
-        setOpenDropdown(null)
-      }
+      const target = e.target as Node
+      // Don't close if click is inside the toolbar or inside a portal dropdown
+      if (toolbarRef.current && toolbarRef.current.contains(target)) return
+      const dropdown = document.querySelector('.specs-dropdown-fixed')
+      if (dropdown && dropdown.contains(target)) return
+      setOpenDropdown(null)
     }
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpenDropdown(null)
@@ -130,7 +157,8 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
     }
   }, [openDropdown])
 
-  const toggleDropdown = (key: DropdownKey) => {
+  const toggleDropdown = (key: DropdownKey, e?: React.MouseEvent<HTMLButtonElement>) => {
+    if (e) dropdownAnchorRef.current = e.currentTarget
     setOpenDropdown(prev => prev === key ? null : key)
   }
 
@@ -252,163 +280,134 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
       <div className="specs-toolbar" ref={toolbarRef} style={{ left: sidebarOpen ? 170 : 48 }}>
         {/* Filter buttons row */}
         <div className="specs-toolbar-filters">
-          {/* Type */}
-          <div className="specs-toolbar-item">
-            <button className={btnCls('type')} onClick={() => toggleDropdown('type')}>Type &#9662;</button>
-            {openDropdown === 'type' && (
-              <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Property Type</div>
-                {TYPE_OPTIONS.map(t => (
-                  <label key={t} className="specs-checkbox-row">
-                    <input type="checkbox" checked={selectedTypes.includes(t)} onChange={() => toggleType(t)} />
-                    <span>{t}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Location */}
-          <div className="specs-toolbar-item">
-            <button className={btnCls('location')} onClick={() => toggleDropdown('location')}>City &#9662;</button>
-            {openDropdown === 'location' && (
-              <div className="specs-dropdown specs-dropdown-wide">
-                <div className="specs-dropdown-title">City</div>
-                {selectedCities.length > 0 && (
-                  <button className="specs-clear-link" onClick={() => setSelectedCities([])}>Clear</button>
-                )}
-                <div className="specs-city-grid">
-                  {(filterOptions?.cities || []).map(c => (
-                    <label key={c.city} className="specs-checkbox-row">
-                      <input type="checkbox" checked={selectedCities.includes(c.city)} onChange={() => toggleCity(c.city)} />
-                      <span>{c.city} ({c.count})</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Size */}
-          <div className="specs-toolbar-item">
-            <button className={btnCls('size')} onClick={() => toggleDropdown('size')}>Size &#9662;</button>
-            {openDropdown === 'size' && (
-              <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Building SF</div>
-                <div className="specs-preset-grid">
-                  {SF_PRESETS.map(p => (
-                    <button key={p.value} className={`specs-preset-btn${sfPreset === p.value ? ' active' : ''}`}
-                      onClick={() => handleSfPresetChange(p.value)}>{p.label}</button>
-                  ))}
-                </div>
-                <div className="specs-range-row">
-                  <input type="number" placeholder="Min" value={minSf} onChange={e => { setMinSf(e.target.value); setSfPreset('') }} className="specs-input" />
-                  <span>-</span>
-                  <input type="number" placeholder="Max" value={maxSf} onChange={e => { setMaxSf(e.target.value); setSfPreset('') }} className="specs-input" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Power */}
-          <div className="specs-toolbar-item">
-            <button className={btnCls('power')} onClick={() => toggleDropdown('power')}>Power &#9662;</button>
-            {openDropdown === 'power' && (
-              <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Amps</div>
-                {POWER_OPTIONS.map(o => (
-                  <label key={o.value} className="specs-radio-row">
-                    <input type="radio" name="power" checked={power === o.value} onChange={() => setPower(o.value)} />
-                    <span>{o.label}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Clearance */}
-          <div className="specs-toolbar-item">
-            <button className={btnCls('clearance')} onClick={() => toggleDropdown('clearance')}>Clear Ht &#9662;</button>
-            {openDropdown === 'clearance' && (
-              <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Clear Height</div>
-                {CLEAR_HEIGHT_OPTIONS.map(o => (
-                  <label key={o.value} className="specs-radio-row">
-                    <input type="radio" name="clearHeight" checked={clearHeight === o.value} onChange={() => setClearHeight(o.value)} />
-                    <span>{o.label}</span>
-                  </label>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Loading */}
-          <div className="specs-toolbar-item">
-            <button className={btnCls('loading')} onClick={() => toggleDropdown('loading')}>Loading &#9662;</button>
-            {openDropdown === 'loading' && (
-              <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Loading</div>
-                <div className="specs-select-row">
-                  <label>Docks</label>
-                  <select value={dockDoors} onChange={e => setDockDoors(e.target.value)} className="specs-select">
-                    {DOCK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div className="specs-select-row">
-                  <label>GL</label>
-                  <select value={glDoors} onChange={e => setGlDoors(e.target.value)} className="specs-select">
-                    {GL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Yr Built */}
-          <div className="specs-toolbar-item">
-            <button className={btnCls('yearBuilt')} onClick={() => toggleDropdown('yearBuilt')}>Year &#9662;</button>
-            {openDropdown === 'yearBuilt' && (
-              <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Year Built</div>
-                <div className="specs-range-row">
-                  <input type="number" placeholder="From" value={yearBuiltMin} onChange={e => setYearBuiltMin(e.target.value)} className="specs-input" />
-                  <span>-</span>
-                  <input type="number" placeholder="To" value={yearBuiltMax} onChange={e => setYearBuiltMax(e.target.value)} className="specs-input" />
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Special (Office, Yard, Sprinkler, Rail, Owner-Occ) */}
-          <div className="specs-toolbar-item">
-            <button className={btnCls('special')} onClick={() => toggleDropdown('special')}>More &#9662;</button>
-            {openDropdown === 'special' && (
-              <div className="specs-dropdown">
-                <div className="specs-dropdown-title">More Filters</div>
-                <div className="specs-range-row" style={{ marginBottom: 8 }}>
-                  <label style={{ fontSize: 11, color: '#aaa', marginRight: 6 }}>Min Office SF</label>
-                  <input type="number" placeholder="0" value={minOfficeSf} onChange={e => setMinOfficeSf(e.target.value)} className="specs-input" style={{ width: 80 }} />
-                </div>
-                <label className="specs-checkbox-row">
-                  <input type="checkbox" checked={fencedYard} onChange={e => setFencedYard(e.target.checked)} />
-                  <span>Fenced Yard</span>
-                </label>
-                <label className="specs-checkbox-row">
-                  <input type="checkbox" checked={sprinkler} onChange={e => setSprinkler(e.target.checked)} />
-                  <span>Sprinkler</span>
-                </label>
-                <label className="specs-checkbox-row">
-                  <input type="checkbox" checked={rail} onChange={e => setRail(e.target.checked)} />
-                  <span>Rail Served</span>
-                </label>
-                <label className="specs-checkbox-row">
-                  <input type="checkbox" checked={ownerOccupied} onChange={e => setOwnerOccupied(e.target.checked)} />
-                  <span>Owner Occupied</span>
-                </label>
-              </div>
-            )}
-          </div>
+          <button className={btnCls('type')} onClick={e => toggleDropdown('type', e)}>Type &#9662;</button>
+          <button className={btnCls('location')} onClick={e => toggleDropdown('location', e)}>City &#9662;</button>
+          <button className={btnCls('size')} onClick={e => toggleDropdown('size', e)}>Size &#9662;</button>
+          <button className={btnCls('power')} onClick={e => toggleDropdown('power', e)}>Power &#9662;</button>
+          <button className={btnCls('clearance')} onClick={e => toggleDropdown('clearance', e)}>Clear Ht &#9662;</button>
+          <button className={btnCls('loading')} onClick={e => toggleDropdown('loading', e)}>Loading &#9662;</button>
+          <button className={btnCls('yearBuilt')} onClick={e => toggleDropdown('yearBuilt', e)}>Year &#9662;</button>
+          <button className={btnCls('special')} onClick={e => toggleDropdown('special', e)}>More &#9662;</button>
         </div>
+
+        {/* Dropdown panels - rendered via portal to escape overflow:hidden */}
+        {openDropdown === 'type' && (
+          <FixedDropdown anchorRef={dropdownAnchorRef}>
+            <div className="specs-dropdown-title">Property Type</div>
+            {TYPE_OPTIONS.map(t => (
+              <label key={t} className="specs-checkbox-row">
+                <input type="checkbox" checked={selectedTypes.includes(t)} onChange={() => toggleType(t)} />
+                <span>{t}</span>
+              </label>
+            ))}
+          </FixedDropdown>
+        )}
+        {openDropdown === 'location' && (
+          <FixedDropdown anchorRef={dropdownAnchorRef} wide>
+            <div className="specs-dropdown-title">City</div>
+            {selectedCities.length > 0 && (
+              <button className="specs-clear-link" onClick={() => setSelectedCities([])}>Clear</button>
+            )}
+            <div className="specs-city-grid">
+              {(filterOptions?.cities || []).map(c => (
+                <label key={c.city} className="specs-checkbox-row">
+                  <input type="checkbox" checked={selectedCities.includes(c.city)} onChange={() => toggleCity(c.city)} />
+                  <span>{c.city} ({c.count})</span>
+                </label>
+              ))}
+            </div>
+          </FixedDropdown>
+        )}
+        {openDropdown === 'size' && (
+          <FixedDropdown anchorRef={dropdownAnchorRef}>
+            <div className="specs-dropdown-title">Building SF</div>
+            <div className="specs-preset-grid">
+              {SF_PRESETS.map(p => (
+                <button key={p.value} className={`specs-preset-btn${sfPreset === p.value ? ' active' : ''}`}
+                  onClick={() => handleSfPresetChange(p.value)}>{p.label}</button>
+              ))}
+            </div>
+            <div className="specs-range-row">
+              <input type="number" placeholder="Min" value={minSf} onChange={e => { setMinSf(e.target.value); setSfPreset('') }} className="specs-input" />
+              <span>-</span>
+              <input type="number" placeholder="Max" value={maxSf} onChange={e => { setMaxSf(e.target.value); setSfPreset('') }} className="specs-input" />
+            </div>
+          </FixedDropdown>
+        )}
+        {openDropdown === 'power' && (
+          <FixedDropdown anchorRef={dropdownAnchorRef}>
+            <div className="specs-dropdown-title">Amps</div>
+            {POWER_OPTIONS.map(o => (
+              <label key={o.value} className="specs-radio-row">
+                <input type="radio" name="power" checked={power === o.value} onChange={() => setPower(o.value)} />
+                <span>{o.label}</span>
+              </label>
+            ))}
+          </FixedDropdown>
+        )}
+        {openDropdown === 'clearance' && (
+          <FixedDropdown anchorRef={dropdownAnchorRef}>
+            <div className="specs-dropdown-title">Clear Height</div>
+            {CLEAR_HEIGHT_OPTIONS.map(o => (
+              <label key={o.value} className="specs-radio-row">
+                <input type="radio" name="clearHeight" checked={clearHeight === o.value} onChange={() => setClearHeight(o.value)} />
+                <span>{o.label}</span>
+              </label>
+            ))}
+          </FixedDropdown>
+        )}
+        {openDropdown === 'loading' && (
+          <FixedDropdown anchorRef={dropdownAnchorRef}>
+            <div className="specs-dropdown-title">Loading</div>
+            <div className="specs-select-row">
+              <label>Docks</label>
+              <select value={dockDoors} onChange={e => setDockDoors(e.target.value)} className="specs-select">
+                {DOCK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="specs-select-row">
+              <label>GL</label>
+              <select value={glDoors} onChange={e => setGlDoors(e.target.value)} className="specs-select">
+                {GL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+          </FixedDropdown>
+        )}
+        {openDropdown === 'yearBuilt' && (
+          <FixedDropdown anchorRef={dropdownAnchorRef}>
+            <div className="specs-dropdown-title">Year Built</div>
+            <div className="specs-range-row">
+              <input type="number" placeholder="From" value={yearBuiltMin} onChange={e => setYearBuiltMin(e.target.value)} className="specs-input" />
+              <span>-</span>
+              <input type="number" placeholder="To" value={yearBuiltMax} onChange={e => setYearBuiltMax(e.target.value)} className="specs-input" />
+            </div>
+          </FixedDropdown>
+        )}
+        {openDropdown === 'special' && (
+          <FixedDropdown anchorRef={dropdownAnchorRef}>
+            <div className="specs-dropdown-title">More Filters</div>
+            <div className="specs-range-row" style={{ marginBottom: 8 }}>
+              <label style={{ fontSize: 11, color: '#aaa', marginRight: 6 }}>Min Office SF</label>
+              <input type="number" placeholder="0" value={minOfficeSf} onChange={e => setMinOfficeSf(e.target.value)} className="specs-input" style={{ width: 80 }} />
+            </div>
+            <label className="specs-checkbox-row">
+              <input type="checkbox" checked={fencedYard} onChange={e => setFencedYard(e.target.checked)} />
+              <span>Fenced Yard</span>
+            </label>
+            <label className="specs-checkbox-row">
+              <input type="checkbox" checked={sprinkler} onChange={e => setSprinkler(e.target.checked)} />
+              <span>Sprinkler</span>
+            </label>
+            <label className="specs-checkbox-row">
+              <input type="checkbox" checked={rail} onChange={e => setRail(e.target.checked)} />
+              <span>Rail Served</span>
+            </label>
+            <label className="specs-checkbox-row">
+              <input type="checkbox" checked={ownerOccupied} onChange={e => setOwnerOccupied(e.target.checked)} />
+              <span>Owner Occupied</span>
+            </label>
+          </FixedDropdown>
+        )}
 
         {/* Action buttons */}
         <div className="specs-toolbar-actions">
