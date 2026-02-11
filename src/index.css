@@ -1451,6 +1451,7 @@ body {
   padding: 6px 10px;
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 4px;
   height: 48px;
 }
@@ -1459,7 +1460,6 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  flex: 1;
   overflow-x: auto;
 }
 
