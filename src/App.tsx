@@ -14,7 +14,7 @@ import type { LayerKey } from "./components/Sidebar"
 import type { ListingToggleKey } from "./components/Sidebar"
 import { LISTING_TOGGLES } from "./components/Sidebar"
 import { TopSearchBar } from "./components/Search/TopSearchBar"
-import { FullSearchPage } from "./components/Search/FullSearchPage"
+import { SpecsToolbar } from "./components/Search/SpecsToolbar"
 import L from 'leaflet'
 import { DocumentDrawer } from "./components/DocumentDrawer"
 import ListingDetailDrawer from "./components/Listings/ListingDetailDrawer"
@@ -705,6 +705,9 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   // Search result APNs for parcel highlighting
   const [searchApns, setSearchApns] = useState<string[]>([])
 
+  // Specs toolbar (Layer 3) -- overlays map instead of replacing it
+  const [showSpecsToolbar, setShowSpecsToolbar] = useState(false)
+
 
   // Context menu state
   const [contextMenuParcel, setContextMenuParcel] = useState<Parcel | null>(null)
@@ -1307,10 +1310,10 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             crm: 'explorer',
             stats: 'stats',
           }
-          // Specs layer opens full-screen search page
+          // Specs layer toggles compact toolbar over map
           if (layer === 'specs') {
             setPanelView('none')
-            setViewState({ type: 'search-fullscreen' })
+            setShowSpecsToolbar(prev => !prev)
             return
           }
           const panel = layerPanelMap[layer]
@@ -1340,33 +1343,8 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         onSearchResults={handleSearchResults}
       />
 
-      {/* Full-Screen Search Page (replaces map when active) */}
-      {viewState.type === 'search-fullscreen' && (
-        <div
-          className="flex-1 relative z-0 min-w-0 h-full overflow-hidden"
-          style={{
-            marginLeft: sidebarOpen ? 160 : 0,
-            transition: 'margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          }}
-        >
-          <FullSearchPage
-            sidebarOpen={sidebarOpen}
-            onNavigateToProperty={(lat, lng, apn) => {
-              setViewState({ type: 'map' })
-              setPanelView('none')
-              setMapCenter({ lat, lng })
-              setSelectedSearchLocation({ lat, lng })
-            }}
-            onClose={() => {
-              setViewState({ type: 'map' })
-              setPanelView('none')
-            }}
-          />
-        </div>
-      )}
-
-      {/* Center - Map */}
-      {viewState.type !== 'search-fullscreen' && <div className="flex-1 relative z-0 min-w-0 h-full overflow-hidden">
+      {/* Center - Map (always visible) */}
+      <div className="flex-1 relative z-0 min-w-0 h-full overflow-hidden">
         {/* Map */}
         <div className="absolute inset-0">
           <Map
@@ -1391,6 +1369,24 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             highlightApn={highlightApn}
           />
         </div>
+
+        {/* Specs Toolbar -- compact filter bar floating over the map */}
+        {showSpecsToolbar && (
+          <SpecsToolbar
+            sidebarOpen={sidebarOpen}
+            onSearchResults={(apns) => {
+              setSearchApns(apns)
+            }}
+            onNavigateToProperty={(lat, lng, _apn) => {
+              setMapCenter({ lat, lng })
+              setSelectedSearchLocation({ lat, lng })
+            }}
+            onClose={() => {
+              setShowSpecsToolbar(false)
+              setSearchApns([])
+            }}
+          />
+        )}
 
         {/* Parcel Classifier - for classifying parcels as Building/Land/Delete */}
         <ParcelClassifier
@@ -1644,7 +1640,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             onAction={handleContextMenuAction}
           />
         )}
-      </div>}
+      </div>
 
     </div>
   )

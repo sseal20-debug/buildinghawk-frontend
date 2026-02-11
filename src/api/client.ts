@@ -1387,6 +1387,10 @@ export interface BuildingSearchCriteria {
   min_amps?: number;
   power_volts?: string;
   fenced_yard?: boolean;
+  sprinkler?: boolean;
+  owner_occupied?: boolean;
+  min_office_sf?: number;
+  rail?: boolean;
   sort_by?: string;
   sort_dir?: 'asc' | 'desc';
 }
