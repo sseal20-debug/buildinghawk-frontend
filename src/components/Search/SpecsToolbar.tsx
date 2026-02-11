@@ -241,7 +241,7 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
 
   return (
     <>
-      <div className="specs-toolbar" ref={toolbarRef}>
+      <div className="specs-toolbar" ref={toolbarRef} style={{ left: sidebarOpen ? 170 : 48 }}>
         {/* Filter buttons row */}
         <div className="specs-toolbar-filters">
           {/* Type */}
