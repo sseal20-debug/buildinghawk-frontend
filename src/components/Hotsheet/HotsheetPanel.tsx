@@ -28,10 +28,11 @@ const TYPE_FILTERS = [
 interface HotsheetPanelProps {
   onClose: () => void
   onPropertySelect: (item: HotsheetItem) => void
+  defaultTimeFilter?: string
 }
 
-export function HotsheetPanel({ onClose, onPropertySelect }: HotsheetPanelProps) {
-  const [timeFilter, setTimeFilter] = useState('1w')
+export function HotsheetPanel({ onClose, onPropertySelect, defaultTimeFilter = '1d' }: HotsheetPanelProps) {
+  const [timeFilter, setTimeFilter] = useState(defaultTimeFilter)
   const [typeFilter, setTypeFilter] = useState('all')
   const [showMyListings, setShowMyListings] = useState(false)
   const [showMyPortfolio, setShowMyPortfolio] = useState(false)

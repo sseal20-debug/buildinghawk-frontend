@@ -942,6 +942,10 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             setPanelView(panel)
           }
         }
+        // When enabling listings layer, auto-turn on 'all' sub-toggle
+        if (key === 'listings') {
+          setListingToggles({ all: true, sale: false, escrow: false, sold: false, lease: false, leased: false })
+        }
       } else {
         // Toggling OFF — close the panel if it matches this layer
         setPanelView('none')
@@ -950,6 +954,10 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         if (key === 'specs') {
           setShowSpecsToolbar(false)
           setSpecsHighlightParcels(null)
+        }
+        // Clear listing sub-toggles when disabling listings layer
+        if (key === 'listings') {
+          setListingToggles({ all: false, sale: false, escrow: false, sold: false, lease: false, leased: false })
         }
       }
 
@@ -1512,6 +1520,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             {panelView === "hotsheet" && (
               <HotsheetPanel
                 onClose={closePanel}
+                defaultTimeFilter="1d"
                 onPropertySelect={(item) => {
                   console.log('Hotsheet property selected:', item)
                   setPanelView("none")
