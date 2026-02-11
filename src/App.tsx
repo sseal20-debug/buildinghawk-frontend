@@ -931,10 +931,10 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           crm: 'explorer',
           stats: 'stats',
         }
-        // Specs layer opens full-screen search page
+        // Specs layer toggles compact toolbar (not full-screen)
         if (key === 'specs') {
           setPanelView('none')
-          setViewState({ type: 'search-fullscreen' })
+          setShowSpecsToolbar(true)
         } else {
           const panel = layerPanelMap[key]
           if (panel) {
@@ -946,6 +946,10 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         setPanelView('none')
         if (key === 'tenants') setShowTenantLabels(false)
         if (key === 'clients') setShowClients(false)
+        if (key === 'specs') {
+          setShowSpecsToolbar(false)
+          setSearchApns([])
+        }
       }
 
       return next
@@ -1335,13 +1339,33 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         onListingToggleChange={handleListingToggleChange}
       />
 
-      {/* Top Search Bar */}
-      <TopSearchBar
-        onSelect={handleTopSearchSelect}
-        onSearchChange={setSearchQuery}
-        sidebarOpen={sidebarOpen}
-        onSearchResults={handleSearchResults}
-      />
+      {/* Top Search Bar - hidden when specs toolbar is open */}
+      {!showSpecsToolbar && (
+        <TopSearchBar
+          onSelect={handleTopSearchSelect}
+          onSearchChange={setSearchQuery}
+          sidebarOpen={sidebarOpen}
+          onSearchResults={handleSearchResults}
+        />
+      )}
+
+      {/* Specs Toolbar -- compact filter bar at top of screen */}
+      {showSpecsToolbar && (
+        <SpecsToolbar
+          sidebarOpen={sidebarOpen}
+          onSearchResults={(apns) => {
+            setSearchApns(apns)
+          }}
+          onNavigateToProperty={(lat, lng, _apn) => {
+            setMapCenter({ lat, lng })
+            setSelectedSearchLocation({ lat, lng })
+          }}
+          onClose={() => {
+            setShowSpecsToolbar(false)
+            setSearchApns([])
+          }}
+        />
+      )}
 
       {/* Center - Map (always visible) */}
       <div className="flex-1 relative z-0 min-w-0 h-full overflow-hidden">
@@ -1370,23 +1394,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           />
         </div>
 
-        {/* Specs Toolbar -- compact filter bar floating over the map */}
-        {showSpecsToolbar && (
-          <SpecsToolbar
-            sidebarOpen={sidebarOpen}
-            onSearchResults={(apns) => {
-              setSearchApns(apns)
-            }}
-            onNavigateToProperty={(lat, lng, _apn) => {
-              setMapCenter({ lat, lng })
-              setSelectedSearchLocation({ lat, lng })
-            }}
-            onClose={() => {
-              setShowSpecsToolbar(false)
-              setSearchApns([])
-            }}
-          />
-        )}
+        {/* SpecsToolbar moved to top-level (sibling of TopSearchBar) for proper z-index stacking */}
 
         {/* Parcel Classifier - for classifying parcels as Building/Land/Delete */}
         <ParcelClassifier

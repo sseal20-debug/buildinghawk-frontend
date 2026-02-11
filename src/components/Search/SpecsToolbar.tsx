@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { buildingSearchApi } from '../../api/client'
 import type { BuildingSearchCriteria, BuildingSearchResult, FilterOptions } from '../../api/client'
@@ -10,7 +10,6 @@ interface SpecsToolbarProps {
   onClose: () => void
 }
 
-// --- Reused filter option constants from FullSearchPage ---
 const CLEAR_HEIGHT_OPTIONS = [
   { value: '', label: 'Any' },
   { value: '24', label: "24'+" },
@@ -45,7 +44,7 @@ const POWER_OPTIONS = [
 
 const SF_PRESETS = [
   { value: '', label: 'Any Size' },
-  { value: '0-5000', label: '0 - 5,000' },
+  { value: '0-5000', label: '0 - 5K' },
   { value: '5000-10000', label: '5K - 10K' },
   { value: '10000-25000', label: '10K - 25K' },
   { value: '25000-50000', label: '25K - 50K' },
@@ -54,14 +53,8 @@ const SF_PRESETS = [
 ]
 
 const TYPE_OPTIONS = [
-  'Industrial',
-  'Distribution',
-  'Manufacturing',
-  'Flex/R&D',
-  'Cold Storage',
-  'Office',
-  'Retail',
-  'Multi-family',
+  'Industrial', 'Distribution', 'Manufacturing', 'Flex/R&D',
+  'Cold Storage', 'Office', 'Retail', 'Multi-family',
 ]
 
 type DropdownKey = 'type' | 'location' | 'size' | 'office' | 'yard' | 'power' | 'clearance' | 'loading' | 'yearBuilt' | 'special' | null
@@ -79,7 +72,6 @@ function formatCurrency(n: number | null | undefined): string {
 }
 
 export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToProperty, onClose }: SpecsToolbarProps) {
-  // Dropdown state
   const [openDropdown, setOpenDropdown] = useState<DropdownKey>(null)
   const toolbarRef = useRef<HTMLDivElement>(null)
 
@@ -111,33 +103,28 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
   const [sortBy, setSortBy] = useState<string>('address')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
 
-  // Fetch filter options
+  // Fetch filter options (cities list)
   const { data: filterOptions } = useQuery<FilterOptions>({
     queryKey: ['filter-options'],
     queryFn: buildingSearchApi.getFilterOptions,
     staleTime: 5 * 60 * 1000,
   })
 
-  // Close dropdown on outside click
+  // Close dropdown on outside click or Escape
   useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
+    if (openDropdown === null) return
+    const handleMouseDown = (e: MouseEvent) => {
       if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
         setOpenDropdown(null)
       }
     }
     const handleKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpenDropdown(null)
-      // Tab triggers search
-      if (e.key === 'Tab' && openDropdown !== null) {
-        e.preventDefault()
-        setOpenDropdown(null)
-        handleSearch()
-      }
     }
-    document.addEventListener('mousedown', handleClick)
+    document.addEventListener('mousedown', handleMouseDown)
     document.addEventListener('keydown', handleKey)
     return () => {
-      document.removeEventListener('mousedown', handleClick)
+      document.removeEventListener('mousedown', handleMouseDown)
       document.removeEventListener('keydown', handleKey)
     }
   }, [openDropdown])
@@ -146,7 +133,7 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
     setOpenDropdown(prev => prev === key ? null : key)
   }
 
-  const buildCriteria = useCallback((): BuildingSearchCriteria => {
+  function buildCriteria(): BuildingSearchCriteria {
     const criteria: BuildingSearchCriteria = {
       sort_by: sortBy,
       sort_dir: sortDir,
@@ -162,17 +149,17 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
     if (glDoors) criteria.min_gl_doors = parseInt(glDoors)
     if (power) criteria.min_amps = parseInt(power)
     if (fencedYard) criteria.fenced_yard = true
-    // Special filters
     if (sprinkler) criteria.sprinkler = true
     if (ownerOccupied) criteria.owner_occupied = true
     if (minOfficeSf) criteria.min_office_sf = parseInt(minOfficeSf)
     if (rail) criteria.rail = true
     return criteria
-  }, [selectedCities, minSf, maxSf, selectedTypes, yearBuiltMin, yearBuiltMax, clearHeight, dockDoors, glDoors, power, fencedYard, sprinkler, ownerOccupied, minOfficeSf, rail, sortBy, sortDir])
+  }
 
-  const handleSearch = useCallback(async () => {
-    console.log('[SpecsToolbar] handleSearch called')
+  async function doSearch() {
+    console.log('[SpecsToolbar] doSearch called')
     setIsSearching(true)
+    setOpenDropdown(null)
     try {
       const criteria = buildCriteria()
       console.log('[SpecsToolbar] criteria:', JSON.stringify(criteria))
@@ -180,18 +167,17 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
       console.log('[SpecsToolbar] results:', data.count, 'buildings')
       setResults(data.results)
       setResultCount(data.count)
-      // Extract APNs and emit to parent for map highlighting
-      const apns = [...new Set(data.results.map(r => r.apn).filter(Boolean))]
+      const apns = [...new Set(data.results.map((r: BuildingSearchResult) => r.apn).filter(Boolean))]
       console.log('[SpecsToolbar] emitting', apns.length, 'APNs to parent')
       onSearchResults(apns, data.results)
     } catch (err) {
-      console.error('[SpecsToolbar] search failed:', err)
+      console.error('[SpecsToolbar] search error:', err)
     } finally {
       setIsSearching(false)
     }
-  }, [buildCriteria, onSearchResults])
+  }
 
-  const handleClear = () => {
+  function handleClear() {
     setSelectedTypes([])
     setSelectedCities([])
     setSfPreset('')
@@ -210,48 +196,30 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
     setOwnerOccupied(false)
     setResults([])
     setResultCount(0)
+    setShowResultsList(false)
     onSearchResults([], [])
   }
 
-  const handleSfPresetChange = (preset: string) => {
+  function handleSfPresetChange(preset: string) {
     setSfPreset(preset)
-    if (!preset) {
-      setMinSf('')
-      setMaxSf('')
-    } else {
+    if (!preset) { setMinSf(''); setMaxSf('') }
+    else {
       const [min, max] = preset.split('-')
       setMinSf(min || '')
       setMaxSf(max || '')
     }
   }
 
-  const toggleCity = (city: string) => {
-    setSelectedCities(prev =>
-      prev.includes(city) ? prev.filter(c => c !== city) : [...prev, city]
-    )
+  const toggleCity = (city: string) => setSelectedCities(prev => prev.includes(city) ? prev.filter(c => c !== city) : [...prev, city])
+  const toggleType = (t: string) => setSelectedTypes(prev => prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t])
+
+  function handleSort(col: string) {
+    if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setSortBy(col); setSortDir('asc') }
   }
 
-  const toggleType = (t: string) => {
-    setSelectedTypes(prev =>
-      prev.includes(t) ? prev.filter(x => x !== t) : [...prev, t]
-    )
-  }
+  const sortArrow = (col: string) => sortBy !== col ? '' : sortDir === 'asc' ? ' \u25B2' : ' \u25BC'
 
-  const handleSort = (col: string) => {
-    if (sortBy === col) {
-      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
-    } else {
-      setSortBy(col)
-      setSortDir('asc')
-    }
-  }
-
-  const sortArrow = (col: string) => {
-    if (sortBy !== col) return ''
-    return sortDir === 'asc' ? ' \u25B2' : ' \u25BC'
-  }
-
-  // Helper: does a filter have a non-default value?
   const hasFilter = (key: DropdownKey): boolean => {
     switch (key) {
       case 'type': return selectedTypes.length > 0
@@ -268,24 +236,17 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
     }
   }
 
-  const filterBtnClass = (key: DropdownKey) => {
-    const base = 'specs-toolbar-btn'
-    const active = openDropdown === key ? ' active' : ''
-    const filtered = hasFilter(key) ? ' has-filter' : ''
-    return `${base}${active}${filtered}`
-  }
+  const btnCls = (key: DropdownKey) =>
+    `specs-toolbar-btn${openDropdown === key ? ' active' : ''}${hasFilter(key) ? ' has-filter' : ''}`
 
   return (
     <>
-      {/* Toolbar bar */}
       <div className="specs-toolbar" ref={toolbarRef}>
-        {/* Filter buttons */}
+        {/* Filter buttons row */}
         <div className="specs-toolbar-filters">
           {/* Type */}
           <div className="specs-toolbar-item">
-            <button className={filterBtnClass('type')} onClick={() => toggleDropdown('type')}>
-              Type {'\u25BE'}
-            </button>
+            <button className={btnCls('type')} onClick={() => toggleDropdown('type')}>Type &#9662;</button>
             {openDropdown === 'type' && (
               <div className="specs-dropdown">
                 <div className="specs-dropdown-title">Property Type</div>
@@ -301,21 +262,18 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
 
           {/* Location */}
           <div className="specs-toolbar-item">
-            <button className={filterBtnClass('location')} onClick={() => toggleDropdown('location')}>
-              Location {'\u25BE'}
-            </button>
+            <button className={btnCls('location')} onClick={() => toggleDropdown('location')}>City &#9662;</button>
             {openDropdown === 'location' && (
               <div className="specs-dropdown specs-dropdown-wide">
                 <div className="specs-dropdown-title">City</div>
                 {selectedCities.length > 0 && (
-                  <button className="specs-clear-link" onClick={() => setSelectedCities([])}>Clear All</button>
+                  <button className="specs-clear-link" onClick={() => setSelectedCities([])}>Clear</button>
                 )}
                 <div className="specs-city-grid">
                   {(filterOptions?.cities || []).map(c => (
                     <label key={c.city} className="specs-checkbox-row">
                       <input type="checkbox" checked={selectedCities.includes(c.city)} onChange={() => toggleCity(c.city)} />
-                      <span>{c.city}</span>
-                      <span className="specs-count">({c.count})</span>
+                      <span>{c.city} ({c.count})</span>
                     </label>
                   ))}
                 </div>
@@ -325,69 +283,31 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
 
           {/* Size */}
           <div className="specs-toolbar-item">
-            <button className={filterBtnClass('size')} onClick={() => toggleDropdown('size')}>
-              Size {'\u25BE'}
-            </button>
+            <button className={btnCls('size')} onClick={() => toggleDropdown('size')}>Size &#9662;</button>
             {openDropdown === 'size' && (
               <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Building Size (SF)</div>
+                <div className="specs-dropdown-title">Building SF</div>
                 <div className="specs-preset-grid">
                   {SF_PRESETS.map(p => (
-                    <button
-                      key={p.value}
-                      className={`specs-preset-btn ${sfPreset === p.value ? 'active' : ''}`}
-                      onClick={() => handleSfPresetChange(p.value)}
-                    >
-                      {p.label}
-                    </button>
+                    <button key={p.value} className={`specs-preset-btn${sfPreset === p.value ? ' active' : ''}`}
+                      onClick={() => handleSfPresetChange(p.value)}>{p.label}</button>
                   ))}
                 </div>
                 <div className="specs-range-row">
-                  <input type="number" placeholder="Min SF" value={minSf} onChange={e => { setMinSf(e.target.value); setSfPreset('') }} className="specs-input" />
-                  <span className="specs-range-sep">-</span>
-                  <input type="number" placeholder="Max SF" value={maxSf} onChange={e => { setMaxSf(e.target.value); setSfPreset('') }} className="specs-input" />
+                  <input type="number" placeholder="Min" value={minSf} onChange={e => { setMinSf(e.target.value); setSfPreset('') }} className="specs-input" />
+                  <span>-</span>
+                  <input type="number" placeholder="Max" value={maxSf} onChange={e => { setMaxSf(e.target.value); setSfPreset('') }} className="specs-input" />
                 </div>
-              </div>
-            )}
-          </div>
-
-          {/* Office */}
-          <div className="specs-toolbar-item">
-            <button className={filterBtnClass('office')} onClick={() => toggleDropdown('office')}>
-              Office {'\u25BE'}
-            </button>
-            {openDropdown === 'office' && (
-              <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Office SF (min)</div>
-                <input type="number" placeholder="Min Office SF" value={minOfficeSf} onChange={e => setMinOfficeSf(e.target.value)} className="specs-input specs-input-full" />
-              </div>
-            )}
-          </div>
-
-          {/* Yard */}
-          <div className="specs-toolbar-item">
-            <button className={filterBtnClass('yard')} onClick={() => toggleDropdown('yard')}>
-              Yard {'\u25BE'}
-            </button>
-            {openDropdown === 'yard' && (
-              <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Yard</div>
-                <label className="specs-checkbox-row">
-                  <input type="checkbox" checked={fencedYard} onChange={e => setFencedYard(e.target.checked)} />
-                  <span>Fenced Yard</span>
-                </label>
               </div>
             )}
           </div>
 
           {/* Power */}
           <div className="specs-toolbar-item">
-            <button className={filterBtnClass('power')} onClick={() => toggleDropdown('power')}>
-              Power {'\u25BE'}
-            </button>
+            <button className={btnCls('power')} onClick={() => toggleDropdown('power')}>Power &#9662;</button>
             {openDropdown === 'power' && (
               <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Power (Amps)</div>
+                <div className="specs-dropdown-title">Amps</div>
                 {POWER_OPTIONS.map(o => (
                   <label key={o.value} className="specs-radio-row">
                     <input type="radio" name="power" checked={power === o.value} onChange={() => setPower(o.value)} />
@@ -400,9 +320,7 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
 
           {/* Clearance */}
           <div className="specs-toolbar-item">
-            <button className={filterBtnClass('clearance')} onClick={() => toggleDropdown('clearance')}>
-              Clearance {'\u25BE'}
-            </button>
+            <button className={btnCls('clearance')} onClick={() => toggleDropdown('clearance')}>Clear Ht &#9662;</button>
             {openDropdown === 'clearance' && (
               <div className="specs-dropdown">
                 <div className="specs-dropdown-title">Clear Height</div>
@@ -418,20 +336,18 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
 
           {/* Loading */}
           <div className="specs-toolbar-item">
-            <button className={filterBtnClass('loading')} onClick={() => toggleDropdown('loading')}>
-              Loading {'\u25BE'}
-            </button>
+            <button className={btnCls('loading')} onClick={() => toggleDropdown('loading')}>Loading &#9662;</button>
             {openDropdown === 'loading' && (
               <div className="specs-dropdown">
                 <div className="specs-dropdown-title">Loading</div>
                 <div className="specs-select-row">
-                  <label>Dock Doors</label>
+                  <label>Docks</label>
                   <select value={dockDoors} onChange={e => setDockDoors(e.target.value)} className="specs-select">
                     {DOCK_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </div>
                 <div className="specs-select-row">
-                  <label>GL Doors</label>
+                  <label>GL</label>
                   <select value={glDoors} onChange={e => setGlDoors(e.target.value)} className="specs-select">
                     {GL_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
@@ -442,29 +358,33 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
 
           {/* Yr Built */}
           <div className="specs-toolbar-item">
-            <button className={filterBtnClass('yearBuilt')} onClick={() => toggleDropdown('yearBuilt')}>
-              Yr Built {'\u25BE'}
-            </button>
+            <button className={btnCls('yearBuilt')} onClick={() => toggleDropdown('yearBuilt')}>Year &#9662;</button>
             {openDropdown === 'yearBuilt' && (
               <div className="specs-dropdown">
                 <div className="specs-dropdown-title">Year Built</div>
                 <div className="specs-range-row">
                   <input type="number" placeholder="From" value={yearBuiltMin} onChange={e => setYearBuiltMin(e.target.value)} className="specs-input" />
-                  <span className="specs-range-sep">-</span>
+                  <span>-</span>
                   <input type="number" placeholder="To" value={yearBuiltMax} onChange={e => setYearBuiltMax(e.target.value)} className="specs-input" />
                 </div>
               </div>
             )}
           </div>
 
-          {/* Special */}
+          {/* Special (Office, Yard, Sprinkler, Rail, Owner-Occ) */}
           <div className="specs-toolbar-item">
-            <button className={filterBtnClass('special')} onClick={() => toggleDropdown('special')}>
-              Special {'\u25BE'}
-            </button>
+            <button className={btnCls('special')} onClick={() => toggleDropdown('special')}>More &#9662;</button>
             {openDropdown === 'special' && (
               <div className="specs-dropdown">
-                <div className="specs-dropdown-title">Special Features</div>
+                <div className="specs-dropdown-title">More Filters</div>
+                <div className="specs-range-row" style={{ marginBottom: 8 }}>
+                  <label style={{ fontSize: 11, color: '#aaa', marginRight: 6 }}>Min Office SF</label>
+                  <input type="number" placeholder="0" value={minOfficeSf} onChange={e => setMinOfficeSf(e.target.value)} className="specs-input" style={{ width: 80 }} />
+                </div>
+                <label className="specs-checkbox-row">
+                  <input type="checkbox" checked={fencedYard} onChange={e => setFencedYard(e.target.checked)} />
+                  <span>Fenced Yard</span>
+                </label>
                 <label className="specs-checkbox-row">
                   <input type="checkbox" checked={sprinkler} onChange={e => setSprinkler(e.target.checked)} />
                   <span>Sprinkler</span>
@@ -482,28 +402,33 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
           </div>
         </div>
 
-        {/* Actions */}
+        {/* Action buttons */}
         <div className="specs-toolbar-actions">
-          <button className="specs-search-btn" onClick={handleSearch} disabled={isSearching}>
+          <button
+            className="specs-search-btn"
+            onMouseDown={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              doSearch()
+            }}
+            disabled={isSearching}
+          >
             {isSearching ? '...' : 'Search'}
           </button>
           <button className="specs-clear-btn" onClick={handleClear}>Clear</button>
           {resultCount > 0 && (
-            <span className="specs-result-count">{resultCount.toLocaleString()} results</span>
+            <span className="specs-result-count">{resultCount.toLocaleString()}</span>
           )}
           {results.length > 0 && (
-            <button
-              className={`specs-list-btn ${showResultsList ? 'active' : ''}`}
-              onClick={() => setShowResultsList(!showResultsList)}
-            >
+            <button className={`specs-list-btn${showResultsList ? ' active' : ''}`} onClick={() => setShowResultsList(!showResultsList)}>
               List
             </button>
           )}
-          <button className="specs-close-btn" onClick={onClose} title="Close Specs">&times;</button>
+          <button className="specs-close-btn" onClick={onClose} title="Close">&times;</button>
         </div>
       </div>
 
-      {/* Results panel (slides in from right) */}
+      {/* Results list panel */}
       {showResultsList && results.length > 0 && (
         <div className="specs-results-panel">
           <div className="specs-results-header">
@@ -516,27 +441,20 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
                 <th onClick={() => handleSort('address')} className="specs-th-sort">Address{sortArrow('address')}</th>
                 <th onClick={() => handleSort('city')} className="specs-th-sort">City{sortArrow('city')}</th>
                 <th onClick={() => handleSort('building_sf')} className="specs-th-sort specs-th-r">SF{sortArrow('building_sf')}</th>
-                <th className="specs-th-r">Clr Ht</th>
+                <th className="specs-th-r">Clr</th>
                 <th className="specs-th-r">Docks</th>
                 <th className="specs-th-r">GL</th>
-                <th className="specs-th-r">Power</th>
-                <th>Yard</th>
-                <th className="specs-th-r">Rate/Price</th>
+                <th className="specs-th-r">Amps</th>
+                <th className="specs-th-r">Rate</th>
                 <th>Owner</th>
-                <th onClick={() => handleSort('year_built')} className="specs-th-sort specs-th-r">Year{sortArrow('year_built')}</th>
+                <th onClick={() => handleSort('year_built')} className="specs-th-sort specs-th-r">Yr{sortArrow('year_built')}</th>
               </tr>
             </thead>
             <tbody>
               {results.map(r => (
-                <tr
-                  key={r.building_id}
-                  className="specs-row"
-                  onClick={() => {
-                    if (r.latitude && r.longitude) {
-                      onNavigateToProperty(r.latitude, r.longitude, r.apn)
-                    }
-                  }}
-                >
+                <tr key={r.building_id} className="specs-row" onClick={() => {
+                  if (r.latitude && r.longitude) onNavigateToProperty(r.latitude, r.longitude, r.apn)
+                }}>
                   <td className="specs-td-addr">{r.address || '--'}</td>
                   <td>{r.city || '--'}</td>
                   <td className="specs-td-r">{formatNumber(r.building_sf)}</td>
@@ -544,10 +462,7 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
                   <td className="specs-td-r">{r.dock_doors || '--'}</td>
                   <td className="specs-td-r">{r.gl_doors || '--'}</td>
                   <td className="specs-td-r">{r.power_amps ? `${r.power_amps}A` : '--'}</td>
-                  <td>{r.fenced_yard ? 'Yes' : '--'}</td>
-                  <td className="specs-td-r">
-                    {r.listing_rate ? `$${r.listing_rate}/SF` : r.listing_price ? formatCurrency(r.listing_price) : r.last_sale_price ? formatCurrency(r.last_sale_price) : '--'}
-                  </td>
+                  <td className="specs-td-r">{r.listing_rate ? `$${r.listing_rate}` : r.listing_price ? formatCurrency(r.listing_price) : '--'}</td>
                   <td className="specs-td-owner">{r.owner_name || '--'}</td>
                   <td className="specs-td-r">{r.year_built || '--'}</td>
                 </tr>

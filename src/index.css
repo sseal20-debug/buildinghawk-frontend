@@ -1442,17 +1442,17 @@ body {
 .specs-toolbar {
   position: absolute;
   top: 0;
-  left: 0;
+  left: 48px;
   right: 0;
   z-index: 1000;
   background: rgba(26, 39, 68, 0.95);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid rgba(255,255,255,0.15);
-  padding: 6px 12px;
+  padding: 6px 10px;
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 48px;
+  gap: 4px;
+  height: 48px;
 }
 
 .specs-toolbar-filters {
@@ -1720,7 +1720,7 @@ body {
 /* Results list panel */
 .specs-results-panel {
   position: absolute;
-  top: 56px;
+  top: 48px;
   right: 0;
   bottom: 0;
   width: 560px;
@@ -1729,7 +1729,7 @@ body {
   backdrop-filter: blur(8px);
   border-left: 1px solid rgba(255,255,255,0.15);
   overflow-y: auto;
-  z-index: 999;
+  z-index: 998;
   animation: specsSlideIn 0.2s ease-out;
 }
 @keyframes specsSlideIn {
