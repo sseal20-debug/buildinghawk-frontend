@@ -171,17 +171,21 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
   }, [selectedCities, minSf, maxSf, selectedTypes, yearBuiltMin, yearBuiltMax, clearHeight, dockDoors, glDoors, power, fencedYard, sprinkler, ownerOccupied, minOfficeSf, rail, sortBy, sortDir])
 
   const handleSearch = useCallback(async () => {
+    console.log('[SpecsToolbar] handleSearch called')
     setIsSearching(true)
     try {
       const criteria = buildCriteria()
+      console.log('[SpecsToolbar] criteria:', JSON.stringify(criteria))
       const data = await buildingSearchApi.execute(criteria)
+      console.log('[SpecsToolbar] results:', data.count, 'buildings')
       setResults(data.results)
       setResultCount(data.count)
       // Extract APNs and emit to parent for map highlighting
       const apns = [...new Set(data.results.map(r => r.apn).filter(Boolean))]
+      console.log('[SpecsToolbar] emitting', apns.length, 'APNs to parent')
       onSearchResults(apns, data.results)
     } catch (err) {
-      console.error('Specs search failed:', err)
+      console.error('[SpecsToolbar] search failed:', err)
     } finally {
       setIsSearching(false)
     }
