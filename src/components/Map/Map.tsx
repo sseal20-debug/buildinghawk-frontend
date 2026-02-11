@@ -31,6 +31,14 @@ interface MapProps {
   onMapReady?: (map: L.Map) => void
   // Company labels for tenant overlay (Layer 5)
   companyLabels?: CompanyLabel[]
+  // Condo/business park markers (Layer 27)
+  condoMarkers?: Array<{
+    id: number; park_name: string; address: string; city: string;
+    building_sf?: number; unit_type?: string;
+    latitude: number; longitude: number;
+    tenant_name?: string; owner_name?: string;
+    sale_price?: number; lease_psf?: number;
+  }>
   // Quick filter state — null = parcels hidden, 'all' = show all, etc.
   quickFilter?: string | null
   // Active layer name for badge display
@@ -138,6 +146,7 @@ export function Map({
   showRecentSold = false,
   showRecentLeased = false,
   companyLabels,
+  condoMarkers,
   quickFilter = null,
   onMapReady,
   activeLayerName = 'New Listings/Updates',
@@ -162,6 +171,7 @@ export function Map({
   const companyLabelLayerRef = useRef<L.LayerGroup | null>(null)
   const selectedParcelsLayerRef = useRef<L.LayerGroup | null>(null)
   const listingLayerRef = useRef<L.LayerGroup | null>(null)
+  const condoLayerRef = useRef<L.LayerGroup | null>(null)
   const drawnItemsRef = useRef<L.FeatureGroup | null>(null)
   const drawControlRef = useRef<L.Control.Draw | null>(null)
   const shieldContainerRef = useRef<HTMLDivElement | null>(null)
@@ -630,6 +640,11 @@ export function Map({
     const listingLayer = L.layerGroup()
     listingLayer.addTo(map)
     listingLayerRef.current = listingLayer
+
+    // Create condo/business park marker layer
+    const condoLayer = L.layerGroup()
+    condoLayer.addTo(map)
+    condoLayerRef.current = condoLayer
 
     // Road overlays and labels will be added dynamically via useEffect when roadGeometryData loads
 
@@ -1567,6 +1582,71 @@ export function Map({
     }
 
   }, [parcelUnitsData, currentZoom]) // Re-render when data or zoom changes
+
+  // Render condo/business park markers (Layer 27)
+  useEffect(() => {
+    const condoLayer = condoLayerRef.current
+    if (!condoLayer) return
+
+    condoLayer.clearLayers()
+
+    if (!condoMarkers || condoMarkers.length === 0) return
+
+    condoMarkers.forEach((marker) => {
+      const isCondo = marker.unit_type === 'Condo'
+      const color = isCondo ? '#00acc1' : '#0288d1'  // teal for condos, blue for others
+
+      const icon = L.divIcon({
+        className: 'condo-marker-pin',
+        html: `<div style="
+          width: 10px;
+          height: 10px;
+          border-radius: 50%;
+          background-color: ${color};
+          border: 2px solid white;
+          box-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        "></div>`,
+        iconSize: [10, 10],
+        iconAnchor: [5, 5],
+      })
+
+      const m = L.marker([marker.latitude, marker.longitude], { icon })
+
+      // Tooltip with details
+      const sfText = marker.building_sf ? `${marker.building_sf.toLocaleString()} SF` : ''
+      const tenantText = marker.tenant_name ? `Tenant: ${marker.tenant_name}` : ''
+      const ownerText = marker.owner_name ? `Owner: ${marker.owner_name}` : ''
+      const tooltip = [
+        marker.address,
+        marker.park_name,
+        `${marker.city}${sfText ? ' - ' + sfText : ''}`,
+        tenantText,
+        ownerText,
+      ].filter(Boolean).join('\n')
+
+      m.bindTooltip(tooltip, {
+        direction: 'top',
+        offset: [0, -5],
+        className: 'address-tooltip',
+      })
+
+      // Click handler - select as parcel
+      m.on('click', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stopPropagation(e)
+        const parcel: Parcel = {
+          apn: String(marker.id),
+          situs_address: marker.address,
+          city: marker.city,
+          zip: '',
+          land_sf: 0,
+          zoning: '',
+        }
+        onParcelSelectRef.current(parcel, { x: e.originalEvent.clientX, y: e.originalEvent.clientY })
+      })
+
+      condoLayer.addLayer(m)
+    })
+  }, [condoMarkers])
 
   // Render listing parcel polygon highlights (colored by listing type toggle)
   useEffect(() => {

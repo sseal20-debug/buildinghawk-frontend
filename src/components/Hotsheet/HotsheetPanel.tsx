@@ -37,12 +37,13 @@ export function HotsheetPanel({ onClose, onPropertySelect, defaultTimeFilter = '
   const [showMyListings, setShowMyListings] = useState(false)
   const [showMyPortfolio, setShowMyPortfolio] = useState(false)
 
-  // Fetch hotsheet items from API
+  // Fetch hotsheet items from API (request up to 100)
   const { data, isLoading } = useQuery({
     queryKey: ['hotsheet', timeFilter, typeFilter],
-    queryFn: () => hotsheetApi.list({ timeFilter, typeFilter }),
+    queryFn: () => hotsheetApi.list({ timeFilter, typeFilter, limit: 100 }),
   })
   const items = data?.items || []
+  const totalCount = data?.total || items.length
 
   const getTypeIcon = (type: HotsheetItem['type']) => {
     switch (type) {
@@ -70,7 +71,8 @@ export function HotsheetPanel({ onClose, onPropertySelect, defaultTimeFilter = '
     }
   }
 
-  const formatPrice = (price: number) => {
+  const formatPrice = (price: number, isLease?: boolean) => {
+    if (isLease || price < 50) return `$${price.toFixed(2)}/SF`
     if (price >= 1000000) return `$${(price / 1000000).toFixed(2)}M`
     if (price >= 1000) return `$${(price / 1000).toFixed(0)}K`
     return `$${price}`
@@ -183,7 +185,7 @@ export function HotsheetPanel({ onClose, onPropertySelect, defaultTimeFilter = '
       {/* Results Count */}
       <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
         <span className="text-sm text-gray-600">
-          {filteredItems.length} {filteredItems.length === 1 ? 'item' : 'items'}
+          {filteredItems.length}{totalCount > filteredItems.length ? ` of ${totalCount}` : ''} {totalCount === 1 ? 'change' : 'changes'}
         </span>
         <button className="text-xs text-teal hover:underline">Export</button>
       </div>
@@ -229,10 +231,10 @@ export function HotsheetPanel({ onClose, onPropertySelect, defaultTimeFilter = '
                     <div className="flex flex-wrap gap-2 mt-1 text-xs text-gray-600">
                       {item.details.price && (
                         <span className="font-medium text-navy-dark">
-                          {formatPrice(item.details.price)}
+                          {formatPrice(item.details.price, item.listingType === 'lease')}
                           {item.details.priceChange && (
                             <span className={item.details.priceChange < 0 ? 'text-red-500' : 'text-green-500'}>
-                              {' '}({item.details.priceChange < 0 ? '' : '+'}{formatPrice(item.details.priceChange)})
+                              {' '}({item.details.priceChange < 0 ? '' : '+'}{formatPrice(Math.abs(item.details.priceChange), item.listingType === 'lease')})
                             </span>
                           )}
                         </span>

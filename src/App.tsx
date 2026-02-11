@@ -721,6 +721,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
   const [showLand, setShowLand] = useState(false)  // Off until click/search
   const [showClassifier, setShowClassifier] = useState(false)
   const [showTenantLabels, setShowTenantLabels] = useState(false)
+  const [showCondoMarkers, setShowCondoMarkers] = useState(false)
   const mapComponentRef = useRef<{ getMap: () => L.Map | null } | null>(null)
   const [selectedListing, setSelectedListing] = useState<any>(null)
   const [prospectFilter, setProspectFilter] = useState<Partial<CRMProspectFilter>>({})
@@ -770,6 +771,29 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
     queryKey: ["tenants", "map-labels"],
     queryFn: tenantsApi.getMapLabels,
     enabled: showTenantLabels,
+    staleTime: 1000 * 60 * 10, // 10 minutes
+  })
+
+  // Query for condo/business park markers when Layer 27 (Condos) is active
+  const { data: condoMarkersData } = useQuery({
+    queryKey: ["condos", "markers"],
+    queryFn: async () => {
+      const apiKey = localStorage.getItem('buildingHawkUser') || ''
+      const apiUrl = import.meta.env.VITE_API_URL || ''
+      const res = await fetch(`${apiUrl}/api/condos/markers`, {
+        headers: { 'x-api-key': apiKey },
+      })
+      if (!res.ok) throw new Error('Failed to fetch condo markers')
+      const data = await res.json()
+      return data.markers as Array<{
+        id: number; park_name: string; address: string; city: string;
+        building_sf?: number; unit_type?: string;
+        latitude: number; longitude: number;
+        tenant_name?: string; owner_name?: string;
+        sale_price?: number; lease_psf?: number;
+      }>
+    },
+    enabled: showCondoMarkers,
     staleTime: 1000 * 60 * 10, // 10 minutes
   })
 
@@ -909,6 +933,8 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         }
         // Enable CRM marker overlays for people layers
         if (key === 'clients') setShowClients(true)
+        // Enable condo markers for Layer 27
+        if (key === 'condos') setShowCondoMarkers(true)
         // Toggle tenant labels for Layer 5
         setShowTenantLabels(key === 'tenants')
 
@@ -951,6 +977,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         setPanelView('none')
         if (key === 'tenants') setShowTenantLabels(false)
         if (key === 'clients') setShowClients(false)
+        if (key === 'condos') setShowCondoMarkers(false)
         if (key === 'specs') {
           setShowSpecsToolbar(false)
           setSpecsHighlightParcels(null)
@@ -1396,6 +1423,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             propertyMarkers={showProperties && !showSpecsToolbar ? propertiesData : undefined}
             landMarkers={showLand ? landData : undefined}
             companyLabels={showTenantLabels ? companyLabelsData : undefined}
+            condoMarkers={showCondoMarkers ? condoMarkersData : undefined}
             quickFilter={listingToggles.all ? 'all' : null}
             listingHighlights={listingHighlights}
             onMapReady={(map) => {
@@ -1567,8 +1595,9 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
               <CondosPanel
                 onClose={closePanel}
                 onCondoSelect={(condo) => {
-                  console.log('Condo selected:', condo)
-                  setPanelView("none")
+                  if (condo.latitude && condo.longitude) {
+                    setMapCenter({ lat: condo.latitude, lng: condo.longitude })
+                  }
                 }}
               />
             )}

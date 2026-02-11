@@ -1,87 +1,122 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 
-interface Condo {
-  id: string
+interface BusinessPark {
+  id: number
+  park_name: string
   address: string
   city: string
-  unit_number?: string
-  building_name?: string
-  sf?: number
-  bedrooms?: number
-  bathrooms?: number
-  parking_spaces?: number
-  year_built?: number
-  for_sale: boolean
-  for_lease: boolean
-  sale_price?: number
-  lease_rate?: number
-  hoa_fee?: number
+  state: string
+  zip?: string
+  building_sf?: number
+  acres?: number
+  unit_type?: string  // Condo, Freestanding
+  latitude?: number
+  longitude?: number
   owner_name?: string
-  status: 'available' | 'pending' | 'sold' | 'leased'
+  owner_address?: string
+  owner_city?: string
+  tenant_name?: string
+  lease_expiration?: string
+  lease_psf?: number
+  sale_date?: string
+  sale_price?: number
+  apn?: string
+  description?: string  // Light Industrial, Flex/R&D, Incubator, etc.
+  stories?: number
+  clear_height?: number
+  sprinklered?: boolean
+  year_built?: number
+  property_type?: string  // Multi-Tenant, Single-Tenant
+  dock_doors?: number
+  grade_doors?: number
+  office_sf?: number
+  rail_service?: boolean
+  construction?: string
 }
 
 interface CondosPanelProps {
   onClose: () => void
-  onCondoSelect?: (condo: Condo) => void
+  onCondoSelect?: (condo: BusinessPark) => void
 }
 
-const STATUS_FILTERS = [
+const TYPE_FILTERS = [
   { label: 'All', value: 'all' },
-  { label: 'For Sale', value: 'sale' },
-  { label: 'For Lease', value: 'lease' },
-  { label: 'Sold', value: 'sold' },
-  { label: 'Leased', value: 'leased' },
+  { label: 'Condos', value: 'condo' },
+  { label: 'Freestanding', value: 'freestanding' },
+  { label: 'Multi-Tenant', value: 'multi' },
+  { label: 'Single-Tenant', value: 'single' },
 ]
 
+const apiUrl = import.meta.env.VITE_API_URL || ''
+
 export function CondosPanel({ onClose, onCondoSelect }: CondosPanelProps) {
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [typeFilter, setTypeFilter] = useState('all')
   const [searchQuery, setSearchQuery] = useState('')
   const [cityFilter, setCityFilter] = useState('')
 
-  // Fetch condos from API
+  // Fetch from real business_park table
   const { data, isLoading } = useQuery({
-    queryKey: ['condos', statusFilter, searchQuery, cityFilter],
+    queryKey: ['condos', typeFilter, searchQuery, cityFilter],
     queryFn: async () => {
       const params = new URLSearchParams()
-      if (statusFilter !== 'all') params.append('status', statusFilter)
+      if (typeFilter !== 'all') params.append('status', typeFilter)
       if (searchQuery) params.append('q', searchQuery)
       if (cityFilter) params.append('city', cityFilter)
+      params.append('limit', '500')
 
-      const res = await fetch(`/api/condos?${params}`)
+      const apiKey = localStorage.getItem('buildingHawkUser') || ''
+      const res = await fetch(`${apiUrl}/api/condos?${params}`, {
+        headers: { 'x-api-key': apiKey },
+      })
       if (!res.ok) throw new Error('Failed to fetch condos')
-      return res.json() as Promise<{ condos: Condo[]; count: number }>
+      return res.json() as Promise<{ condos: BusinessPark[]; count: number }>
+    },
+  })
+
+  // Stats query
+  const { data: stats } = useQuery({
+    queryKey: ['condos-stats'],
+    queryFn: async () => {
+      const apiKey = localStorage.getItem('buildingHawkUser') || ''
+      const res = await fetch(`${apiUrl}/api/condos/stats`, {
+        headers: { 'x-api-key': apiKey },
+      })
+      if (!res.ok) return null
+      return res.json()
     },
   })
 
   const condos = data?.condos || []
 
-  const getStatusColor = (status: Condo['status']) => {
-    switch (status) {
-      case 'available': return 'bg-green-100 text-green-800'
-      case 'pending': return 'bg-amber-100 text-amber-800'
-      case 'sold': return 'bg-blue-100 text-blue-800'
-      case 'leased': return 'bg-purple-100 text-purple-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
+  const getTypeColor = (type?: string) => {
+    if (type === 'Condo') return 'bg-cyan-100 text-cyan-800'
+    if (type === 'Freestanding') return 'bg-amber-100 text-amber-800'
+    return 'bg-gray-100 text-gray-600'
+  }
+
+  const getPropertyTypeColor = (type?: string) => {
+    if (type === 'Multi-Tenant') return 'bg-purple-100 text-purple-800'
+    if (type === 'Single-Tenant') return 'bg-blue-100 text-blue-800'
+    return ''
   }
 
   const formatPrice = (price?: number) => {
-    if (!price) return '-'
+    if (!price) return ''
     if (price >= 1000000) return `$${(price / 1000000).toFixed(2)}M`
     if (price >= 1000) return `$${(price / 1000).toFixed(0)}K`
     return `$${price}`
   }
-
-  const formatRate = (rate?: number) => rate ? `$${rate.toLocaleString()}/mo` : '-'
 
   return (
     <div className="flex flex-col h-full bg-white">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-[#00acc1] text-white border-b">
         <div>
-          <h2 className="font-bold text-lg">Condos</h2>
-          <p className="text-xs opacity-80">Industrial Condo Inventory</p>
+          <h2 className="font-bold text-lg">Business Parks</h2>
+          <p className="text-xs opacity-80">
+            {stats ? `${stats.total} properties | ${stats.condos} condos | ${stats.unique_parks} parks` : 'Industrial Condo & Park Inventory'}
+          </p>
         </div>
         <button
           onClick={onClose}
@@ -101,23 +136,23 @@ export function CondosPanel({ onClose, onCondoSelect }: CondosPanelProps) {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search by address or building name..."
+            placeholder="Search address, park, tenant, owner..."
             className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#00acc1] focus:border-transparent"
           />
         </div>
 
-        {/* Status Filter */}
+        {/* Type Filter */}
         <div>
           <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">
-            Status
+            Type
           </label>
           <div className="flex flex-wrap gap-1">
-            {STATUS_FILTERS.map(filter => (
+            {TYPE_FILTERS.map(filter => (
               <button
                 key={filter.value}
-                onClick={() => setStatusFilter(filter.value)}
+                onClick={() => setTypeFilter(filter.value)}
                 className={`px-3 py-1.5 text-xs rounded transition-colors ${
-                  statusFilter === filter.value
+                  typeFilter === filter.value
                     ? 'bg-[#00acc1] text-white font-medium'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
                 }`}
@@ -146,9 +181,8 @@ export function CondosPanel({ onClose, onCondoSelect }: CondosPanelProps) {
       {/* Results Count */}
       <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
         <span className="text-sm text-gray-600">
-          {condos.length} {condos.length === 1 ? 'condo' : 'condos'}
+          {condos.length} {condos.length === 1 ? 'property' : 'properties'}
         </span>
-        <button className="text-xs text-teal hover:underline">Export</button>
       </div>
 
       {/* Results List */}
@@ -159,58 +193,79 @@ export function CondosPanel({ onClose, onCondoSelect }: CondosPanelProps) {
           </div>
         ) : condos.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-32 text-gray-400">
-            <span className="text-3xl mb-2">🏬</span>
-            <span className="text-sm">No condos found</span>
-            <span className="text-xs mt-1">Condo data not yet imported</span>
+            <span className="text-3xl mb-2">🏭</span>
+            <span className="text-sm">No properties found</span>
           </div>
         ) : (
           <div className="divide-y divide-gray-100">
-            {condos.map(condo => (
+            {condos.map(item => (
               <button
-                key={condo.id}
-                onClick={() => onCondoSelect?.(condo)}
+                key={item.id}
+                onClick={() => onCondoSelect?.(item)}
                 className="w-full px-4 py-3 text-left hover:bg-gray-50 transition-colors"
               >
-                <div className="flex items-start gap-3">
-                  {/* Status */}
-                  <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded mt-1 ${getStatusColor(condo.status)}`}>
-                    {condo.status.toUpperCase()}
-                  </span>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-gray-900 truncate">
-                      {condo.address}
-                      {condo.unit_number && <span className="text-gray-500"> #{condo.unit_number}</span>}
-                    </div>
-                    {condo.building_name && (
-                      <div className="text-sm text-gray-600">{condo.building_name}</div>
+                <div className="flex items-start gap-2">
+                  {/* Type badge */}
+                  <div className="flex flex-col gap-1 mt-0.5">
+                    {item.unit_type && (
+                      <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getTypeColor(item.unit_type)}`}>
+                        {item.unit_type}
+                      </span>
                     )}
-                    <div className="text-sm text-gray-500">{condo.city}</div>
-
-                    {/* Specs */}
-                    <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-xs text-gray-600">
-                      {condo.sf && <span>{condo.sf.toLocaleString()} SF</span>}
-                      {condo.for_sale && condo.sale_price && (
-                        <span className="text-blue-700 font-medium">{formatPrice(condo.sale_price)}</span>
-                      )}
-                      {condo.for_lease && condo.lease_rate && (
-                        <span className="text-green-700 font-medium">{formatRate(condo.lease_rate)}</span>
-                      )}
-                      {condo.hoa_fee && <span>HOA: ${condo.hoa_fee}/mo</span>}
-                      {condo.year_built && <span>Built {condo.year_built}</span>}
-                    </div>
-
-                    {/* Owner */}
-                    {condo.owner_name && (
-                      <div className="mt-1 text-xs text-gray-400">
-                        Owner: {condo.owner_name}
-                      </div>
+                    {item.property_type && (
+                      <span className={`px-1.5 py-0.5 text-[10px] font-medium rounded ${getPropertyTypeColor(item.property_type)}`}>
+                        {item.property_type === 'Multi-Tenant' ? 'Multi' : 'Single'}
+                      </span>
                     )}
                   </div>
 
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="font-medium text-gray-900 truncate text-sm">
+                      {item.address}
+                    </div>
+                    <div className="text-xs text-teal-700 font-medium truncate">
+                      {item.park_name}
+                    </div>
+                    <div className="text-xs text-gray-500">{item.city}, {item.state} {item.zip || ''}</div>
+
+                    {/* Specs row */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[11px] text-gray-600">
+                      {item.building_sf ? <span>{item.building_sf.toLocaleString()} SF</span> : null}
+                      {item.clear_height ? <span>{item.clear_height}' clr</span> : null}
+                      {item.dock_doors ? <span>{item.dock_doors} dock</span> : null}
+                      {item.grade_doors ? <span>{item.grade_doors} GL</span> : null}
+                      {item.year_built ? <span>Built {item.year_built}</span> : null}
+                      {item.construction ? <span>{item.construction}</span> : null}
+                      {item.description ? <span className="italic">{item.description}</span> : null}
+                    </div>
+
+                    {/* Owner / Tenant / Sale */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 mt-1 text-[11px]">
+                      {item.tenant_name && (
+                        <span className="text-green-700">Tenant: {item.tenant_name}</span>
+                      )}
+                      {item.owner_name && (
+                        <span className="text-gray-500">Owner: {item.owner_name}</span>
+                      )}
+                    </div>
+                    {(item.sale_price || item.lease_psf) ? (
+                      <div className="flex gap-x-3 mt-0.5 text-[11px]">
+                        {item.sale_price ? (
+                          <span className="text-blue-700 font-medium">Sale: {formatPrice(item.sale_price)}</span>
+                        ) : null}
+                        {item.lease_psf ? (
+                          <span className="text-green-700 font-medium">${item.lease_psf.toFixed(2)}/SF</span>
+                        ) : null}
+                        {item.sale_date ? (
+                          <span className="text-gray-400">{item.sale_date}</span>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </div>
+
                   {/* Arrow */}
-                  <svg className="w-5 h-5 text-gray-400 mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-gray-400 mt-1 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                   </svg>
                 </div>
@@ -219,18 +274,8 @@ export function CondosPanel({ onClose, onCondoSelect }: CondosPanelProps) {
           </div>
         )}
       </div>
-
-      {/* Footer */}
-      <div className="p-4 border-t border-gray-200 flex gap-2">
-        <button className="flex-1 px-4 py-2 bg-[#00acc1] text-white text-sm font-medium rounded-lg hover:bg-[#00838f] transition-colors">
-          + Add Condo
-        </button>
-        <button className="px-4 py-2 bg-gray-100 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-200 transition-colors">
-          Import Data
-        </button>
-      </div>
     </div>
   )
 }
 
-export type { Condo }
+export type { BusinessPark }

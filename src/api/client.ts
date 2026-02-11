@@ -1202,6 +1202,9 @@ export interface HotsheetItem {
   address: string;
   city: string;
   timestamp: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  listingType?: 'lease' | 'sale';
   details: {
     price?: number;
     priceChange?: number;
