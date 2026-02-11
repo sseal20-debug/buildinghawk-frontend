@@ -707,6 +707,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
 
   // Specs toolbar (Layer 3) -- overlays map instead of replacing it
   const [showSpecsToolbar, setShowSpecsToolbar] = useState(false)
+  const [specsHighlightParcels, setSpecsHighlightParcels] = useState<import('./types').ParcelFeatureCollection | null>(null)
 
 
   // Context menu state
@@ -948,7 +949,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         if (key === 'clients') setShowClients(false)
         if (key === 'specs') {
           setShowSpecsToolbar(false)
-          setSearchApns([])
+          setSpecsHighlightParcels(null)
         }
       }
 
@@ -1317,7 +1318,10 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           // Specs layer toggles compact toolbar over map
           if (layer === 'specs') {
             setPanelView('none')
-            setShowSpecsToolbar(prev => !prev)
+            setShowSpecsToolbar(prev => {
+              if (prev) setSpecsHighlightParcels(null)  // Clear highlights when closing
+              return !prev
+            })
             return
           }
           const panel = layerPanelMap[layer]
@@ -1353,8 +1357,8 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
       {showSpecsToolbar && (
         <SpecsToolbar
           sidebarOpen={sidebarOpen}
-          onSearchResults={(apns) => {
-            setSearchApns(apns)
+          onSearchResults={(parcels, _results) => {
+            setSpecsHighlightParcels(parcels)
           }}
           onNavigateToProperty={(lat, lng, _apn) => {
             setMapCenter({ lat, lng })
@@ -1362,7 +1366,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           }}
           onClose={() => {
             setShowSpecsToolbar(false)
-            setSearchApns([])
+            setSpecsHighlightParcels(null)
           }}
         />
       )}
@@ -1378,7 +1382,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             selectedApn={selectedParcel?.apn}
             center={mapCenter}
             selectedSearchLocation={selectedSearchLocation}
-            highlightedParcels={searchParcels || streetParcels}
+            highlightedParcels={specsHighlightParcels || searchParcels || streetParcels}
             crmMarkers={crmMarkers}
             onCRMMarkerClick={handleCRMMarkerClick}
             propertyMarkers={showProperties && !showSpecsToolbar ? propertiesData : undefined}

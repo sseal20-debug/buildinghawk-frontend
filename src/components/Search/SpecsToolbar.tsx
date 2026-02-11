@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { buildingSearchApi } from '../../api/client'
+import { buildingSearchApi, parcelsApi } from '../../api/client'
 import type { BuildingSearchCriteria, BuildingSearchResult, FilterOptions } from '../../api/client'
+import type { ParcelFeatureCollection } from '../../types'
 
 interface SpecsToolbarProps {
   sidebarOpen: boolean
-  onSearchResults: (apns: string[], results: BuildingSearchResult[]) => void
+  onSearchResults: (parcels: ParcelFeatureCollection | null, results: BuildingSearchResult[]) => void
   onNavigateToProperty: (lat: number, lng: number, apn: string) => void
   onClose: () => void
 }
@@ -168,8 +169,15 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
       setResults(data.results)
       setResultCount(data.count)
       const apns = [...new Set(data.results.map((r: BuildingSearchResult) => r.apn).filter(Boolean))]
-      console.log('[SpecsToolbar] emitting', apns.length, 'APNs to parent')
-      onSearchResults(apns, data.results)
+      console.log('[SpecsToolbar] fetching GeoJSON for', apns.length, 'APNs')
+      // Fetch parcel GeoJSON directly (cap at 200 per backend limit)
+      if (apns.length > 0) {
+        const geojson = await parcelsApi.getByApns(apns.slice(0, 200))
+        console.log('[SpecsToolbar] got', geojson?.features?.length, 'parcel features')
+        onSearchResults(geojson, data.results)
+      } else {
+        onSearchResults(null, data.results)
+      }
     } catch (err) {
       console.error('[SpecsToolbar] search error:', err)
     } finally {
@@ -197,7 +205,7 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
     setResults([])
     setResultCount(0)
     setShowResultsList(false)
-    onSearchResults([], [])
+    onSearchResults(null, [])
   }
 
   function handleSfPresetChange(preset: string) {
