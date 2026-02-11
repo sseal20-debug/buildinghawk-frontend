@@ -233,7 +233,8 @@ export const parcelsApi = {
   // Get parcels by a list of APNs (returns GeoJSON FeatureCollection)
   getByApns: (apns: string[]) =>
     request<import('@/types').ParcelFeatureCollection>(
-      `/parcels/by-apns?apns=${apns.map(encodeURIComponent).join(',')}`
+      `/parcels/by-apns`,
+      { method: 'POST', body: JSON.stringify({ apns }) }
     ),
 
   getByPoints: (points: Array<{ lat: number; lng: number }>) =>

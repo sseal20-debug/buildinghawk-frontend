@@ -196,9 +196,13 @@ export function SpecsToolbar({ sidebarOpen, onSearchResults, onNavigateToPropert
       console.log('[SpecsToolbar] results:', data.count, 'buildings')
       setResults(data.results)
       setResultCount(data.count)
-      const apns = [...new Set(data.results.map((r: BuildingSearchResult) => r.apn).filter(Boolean))]
-      console.log('[SpecsToolbar] fetching GeoJSON for', apns.length, 'APNs')
-      // Fetch parcel GeoJSON directly (cap at 200 per backend limit)
+      const apns = [...new Set(
+        data.results
+          .map((r: BuildingSearchResult) => r.apn)
+          .filter((a: string) => a && !a.startsWith('CRM-'))
+      )]
+      console.log('[SpecsToolbar] fetching GeoJSON for', apns.length, 'real APNs')
+      // Fetch parcel GeoJSON directly via POST (cap at 200 per backend limit)
       if (apns.length > 0) {
         const geojson = await parcelsApi.getByApns(apns.slice(0, 200))
         console.log('[SpecsToolbar] got', geojson?.features?.length, 'parcel features')
