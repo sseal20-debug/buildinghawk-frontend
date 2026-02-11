@@ -230,7 +230,7 @@ export function Map({
   const { data: boundsParcelsData } = useQuery({
     queryKey: ['parcels', mapBounds],
     queryFn: () => parcelsApi.getInBounds(mapBounds!),
-    enabled: !!mapBounds && currentZoom >= MIN_PARCEL_ZOOM && !selectedSearchLocation && quickFilter !== null,
+    enabled: !!mapBounds && currentZoom >= MIN_PARCEL_ZOOM && !selectedSearchLocation,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
 
@@ -1011,7 +1011,7 @@ export function Map({
   // Update styles when zoom changes (only visibility) - AQUA BLUE
   // Also hides when quickFilter is null (parcels hidden by default)
   useEffect(() => {
-    const style = (currentZoom < MIN_PARCEL_ZOOM || quickFilter === null)
+    const style = (currentZoom < MIN_PARCEL_ZOOM)
       ? { opacity: 0, fillOpacity: 0 }
       : {
           color: PARCEL_COLORS.default, // Aqua/Cyan Blue
