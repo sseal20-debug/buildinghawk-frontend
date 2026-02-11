@@ -1437,7 +1437,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
 
         {/* Side Panel (overlays from right) */}
         {panelView !== "none" && (
-          <div className={`absolute top-0 right-0 bottom-0 bg-navy-dark shadow-xl z-20 flex flex-col border-l border-navy-light ${
+          <div className={`absolute top-0 right-0 bottom-0 bg-navy-dark shadow-xl z-[800] flex flex-col border-l border-navy-light ${
             panelView === "explorer" || panelView === "comps" || panelView === "tenants" ? "w-full sm:w-[900px]" : panelView === "notifications" ? "w-full sm:w-[480px]" : "w-full sm:w-96"
           }`}>
             {panelView === "search" && (
