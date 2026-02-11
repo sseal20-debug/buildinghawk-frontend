@@ -281,32 +281,42 @@ export function LayerSidebar({
         <div className="flex-1 overflow-y-auto p-1.5">
           <SectionHeader icon={'\u{1F3E2}'} label="Property Layers" />
 
-          {/* Listing sub-toggles (All, For Sale, etc.) shown directly */}
-          <div className="mb-1 pl-1">
-            {LISTING_TOGGLES.map((t) => (
-              <div
-                key={t.key}
-                className="flex items-center justify-between py-1.5 px-2 rounded text-[11px] text-gray-600 hover:bg-gray-50 cursor-pointer"
-                onClick={() => onListingToggleChange(t.key, !listingToggles[t.key])}
-              >
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className="w-2.5 h-2.5 rounded-full flex-shrink-0"
-                    style={{ backgroundColor: t.color }}
+          {/* New Listings layer with nested sub-toggles */}
+          <LayerButton
+            layer={PROPERTY_LAYERS[0]}
+            isActive={activeLayer === 'listings'}
+            isEnabled={enabledLayers.has('listings')}
+            onClick={() => onLayerChange('listings')}
+            onToggle={() => onLayerToggle('listings')}
+            count={layerCounts['listings']}
+          />
+          {enabledLayers.has('listings') && (
+            <div className="mb-1 ml-3 pl-2 border-l-2 border-[#e91e63]/30">
+              {LISTING_TOGGLES.map((t) => (
+                <div
+                  key={t.key}
+                  className="flex items-center justify-between py-1 px-2 rounded text-[11px] text-gray-600 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => onListingToggleChange(t.key, !listingToggles[t.key])}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span
+                      className="w-2 h-2 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: t.color }}
+                    />
+                    <span className={listingToggles[t.key] ? 'font-semibold text-gray-900' : ''}>{t.label}</span>
+                  </div>
+                  <ToggleSwitch
+                    isOn={listingToggles[t.key]}
+                    onToggle={() => onListingToggleChange(t.key, !listingToggles[t.key])}
+                    color={t.color}
+                    size="xs"
                   />
-                  <span className={listingToggles[t.key] ? 'font-semibold text-gray-900' : ''}>{t.label}</span>
                 </div>
-                <ToggleSwitch
-                  isOn={listingToggles[t.key]}
-                  onToggle={() => onListingToggleChange(t.key, !listingToggles[t.key])}
-                  color={t.color}
-                  size="xs"
-                />
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
 
-          {/* Property layers (skip "New Listings/Updates" - replaced by direct toggles above) */}
+          {/* Remaining property layers */}
           {renderLayerList(PROPERTY_LAYERS.slice(1))}
 
           <SectionHeader icon={'\u{1F465}'} label="People & Entities" />
