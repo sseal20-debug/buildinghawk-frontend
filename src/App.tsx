@@ -923,14 +923,6 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
       // When toggling ON, activate the layer and open its panel
       if (turningOn) {
         setActiveLayer(key as LayerKey)
-        // Enable properties/land automatically based on layer
-        if (['listings', 'address', 'type', 'comps', 'vacant', 'offmarket', 'newdev', 'owners', 'investor', 'distressed'].includes(key)) {
-          setShowProperties(true)
-        }
-        if (key === 'crm') {
-          setShowProperties(true)
-          setShowLand(true)
-        }
         // Enable CRM marker overlays for people layers
         if (key === 'clients') setShowClients(true)
         // Enable condo markers for Layer 27
@@ -1315,14 +1307,6 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           setActiveLayer(layer)
           // Auto-close sidebar on mobile after selecting a layer
           if (window.innerWidth < 768) setSidebarOpen(false)
-          // Enable properties/land automatically based on layer
-          if (layer === 'listings' || layer === 'address' || layer === 'type' || layer === 'comps' || layer === 'vacant' || layer === 'offmarket' || layer === 'newdev') {
-            setShowProperties(true)
-          }
-          if (layer === 'crm') {
-            setShowProperties(true)
-            setShowLand(true)
-          }
           // Toggle tenant labels for Layer 5
           setShowTenantLabels(layer === 'tenants')
           // Toggle condo markers for Layer 27
@@ -1370,7 +1354,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
         }}
         onLoginClick={onLogout}
         layerCounts={{
-          listings: propertiesData?.length || 0,
+          listings: listingMarkersForToggles ? Object.values(listingMarkersForToggles).flat().length : 0,
           comps: 0,
           vacant: 0,
         }}
@@ -1422,11 +1406,11 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
             highlightedParcels={specsHighlightParcels || searchParcels || streetParcels}
             crmMarkers={crmMarkers}
             onCRMMarkerClick={handleCRMMarkerClick}
-            propertyMarkers={showProperties && !showSpecsToolbar ? propertiesData : undefined}
+            propertyMarkers={undefined}
             landMarkers={showLand ? landData : undefined}
             companyLabels={showTenantLabels ? companyLabelsData : undefined}
             condoMarkers={showCondoMarkers ? condoMarkersData : undefined}
-            quickFilter={listingToggles.all ? 'all' : null}
+            quickFilter={'all'}
             listingHighlights={listingHighlights}
             onMapReady={(map) => {
               mapComponentRef.current = { getMap: () => map }
@@ -1552,7 +1536,9 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
                 onClose={closePanel}
                 defaultTimeFilter="1d"
                 onPropertySelect={(item) => {
-                  console.log('Hotsheet property selected:', item)
+                  if (item.latitude && item.longitude) {
+                    setMapCenter({ lat: item.latitude, lng: item.longitude })
+                  }
                   setPanelView("none")
                 }}
               />
