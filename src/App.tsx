@@ -900,7 +900,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
       if (turningOn) {
         setActiveLayer(key as LayerKey)
         // Enable properties/land automatically based on layer
-        if (['listings', 'address', 'type', 'comps', 'vacant', 'offmarket', 'newdev', 'condos', 'owners', 'investor', 'distressed'].includes(key)) {
+        if (['listings', 'address', 'type', 'comps', 'vacant', 'offmarket', 'newdev', 'owners', 'investor', 'distressed'].includes(key)) {
           setShowProperties(true)
         }
         if (key === 'crm') {
@@ -1289,7 +1289,7 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           // Auto-close sidebar on mobile after selecting a layer
           if (window.innerWidth < 768) setSidebarOpen(false)
           // Enable properties/land automatically based on layer
-          if (layer === 'listings' || layer === 'address' || layer === 'type' || layer === 'comps' || layer === 'vacant' || layer === 'offmarket' || layer === 'newdev' || layer === 'condos') {
+          if (layer === 'listings' || layer === 'address' || layer === 'type' || layer === 'comps' || layer === 'vacant' || layer === 'offmarket' || layer === 'newdev') {
             setShowProperties(true)
           }
           if (layer === 'crm') {
