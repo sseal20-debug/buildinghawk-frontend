@@ -1325,6 +1325,8 @@ function MainApp({ user: _user, onLogout }: { user: UserSession; onLogout: () =>
           }
           // Toggle tenant labels for Layer 5
           setShowTenantLabels(layer === 'tenants')
+          // Toggle condo markers for Layer 27
+          setShowCondoMarkers(layer === 'condos')
           // Open corresponding panel
           const layerPanelMap: Partial<Record<LayerKey, PanelView>> = {
             // Property Layers
