@@ -22,8 +22,21 @@ export function PropertyCard({ parcel, onClose, onViewDetails, onRightClick }: P
     return n >= 1000000 ? `$${(n / 1000000).toFixed(2)}M` : `$${n.toLocaleString()}`
   }
 
-  // Extended parcel props from CRM merge
+  // Extended parcel props from CRM merge + unit spec aggregates
   const ext = parcel as any
+
+  const formatPower = () => {
+    const parts: string[] = []
+    if (ext.power_amps) parts.push(`${ext.power_amps}A`)
+    if (ext.power_volts) parts.push(ext.power_volts)
+    return parts.length > 0 ? parts.join(' ') : null
+  }
+
+  const formatYard = () => {
+    if (!ext.fenced_yard && !ext.yard_sf) return null
+    if (ext.yard_sf) return `Yes - ${formatNumber(ext.yard_sf)} SF`
+    return 'Yes'
+  }
 
   return (
     <div
@@ -96,6 +109,48 @@ export function PropertyCard({ parcel, onClose, onViewDetails, onRightClick }: P
               <div className="flex justify-between py-1.5 border-b border-gray-100 text-[12px]">
                 <span className="text-gray-500">Zoning</span>
                 <span className="font-semibold text-gray-900">{parcel.zoning}</span>
+              </div>
+            )}
+            {ext.clear_height_ft > 0 && (
+              <div className="flex justify-between py-1.5 border-b border-gray-100 text-[12px]">
+                <span className="text-gray-500">Clear Height</span>
+                <span className="font-semibold text-gray-900">{ext.clear_height_ft}' Clear</span>
+              </div>
+            )}
+            {ext.dock_doors > 0 && (
+              <div className="flex justify-between py-1.5 border-b border-gray-100 text-[12px]">
+                <span className="text-gray-500">Dock Doors</span>
+                <span className="font-semibold text-gray-900">{ext.dock_doors} DH</span>
+              </div>
+            )}
+            {ext.gl_doors > 0 && (
+              <div className="flex justify-between py-1.5 border-b border-gray-100 text-[12px]">
+                <span className="text-gray-500">GL Doors</span>
+                <span className="font-semibold text-gray-900">{ext.gl_doors} GL</span>
+              </div>
+            )}
+            {formatPower() && (
+              <div className="flex justify-between py-1.5 border-b border-gray-100 text-[12px]">
+                <span className="text-gray-500">Power</span>
+                <span className="font-semibold text-gray-900">{formatPower()}</span>
+              </div>
+            )}
+            {ext.sprinklers != null && (
+              <div className="flex justify-between py-1.5 border-b border-gray-100 text-[12px]">
+                <span className="text-gray-500">Sprinklers</span>
+                <span className="font-semibold text-gray-900">{ext.sprinklers ? 'Yes' : 'No'}</span>
+              </div>
+            )}
+            {ext.office_sf > 0 && (
+              <div className="flex justify-between py-1.5 border-b border-gray-100 text-[12px]">
+                <span className="text-gray-500">Office SF</span>
+                <span className="font-semibold text-gray-900">{formatNumber(ext.office_sf)} SF</span>
+              </div>
+            )}
+            {formatYard() && (
+              <div className="flex justify-between py-1.5 border-b border-gray-100 text-[12px]">
+                <span className="text-gray-500">Yard</span>
+                <span className="font-semibold text-gray-900">{formatYard()}</span>
               </div>
             )}
             {ext.owner_name && (

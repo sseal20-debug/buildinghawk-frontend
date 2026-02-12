@@ -22,6 +22,25 @@ export interface Parcel {
   building_count?: number;
   unit_count?: number;
   vacant_count?: number;
+  // Aggregated building/unit specs (from SQL JOINs)
+  building_sf?: number;
+  year_built?: number;
+  land_use?: string;
+  owner_name?: string;
+  contact_name?: string;
+  phone?: string;
+  last_sale_price?: number;
+  last_sale_date?: string;
+  clear_height_ft?: number;
+  dock_doors?: number;
+  gl_doors?: number;
+  power_amps?: number;
+  power_volts?: PowerVolts;
+  fenced_yard?: boolean;
+  yard_sf?: number;
+  office_sf?: number;
+  unit_sf?: number;
+  sprinklers?: boolean;
 }
 
 export interface Building {
